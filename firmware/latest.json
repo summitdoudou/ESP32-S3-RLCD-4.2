@@ -1,0 +1,7 @@
+{
+  "version": "v1.6.20",
+  "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.20/weather_clock_v1.6.20.bin",
+  "sha256": "2773d39b4e2e819b8cd410003ab347b49dd54e5e7b621a3e9113bbb6aa925513",
+  "size": 6318400,
+  "notes": "v1.6.20：共 1 项更新。\n1. 天气看板底部信息行重新排布：风力与\"距日落\"首字起笔对齐，湿度与\"日落\"两列整体右移，…\n完整说明见源码仓库同版本 Release。"
+}
