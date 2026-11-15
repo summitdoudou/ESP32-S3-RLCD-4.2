@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.21",
+  "latest": "v1.6.22",
   "items": [
+    {
+      "version": "v1.6.22",
+      "notes": "v1.6.22：共 1 项更新。\n1. 修复网络广播播放变慢、声音低沉拉长的问题：北京新闻广播为 48kHz 立体声流，改为重采样到 16kHz 单声道再送扬声器，与小智音频链路时钟对齐。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.22/weather_clock_v1.6.22.bin",
+        "sha256": "5a778df8d4bb426618deec485492480239a02ed5a2d11e7aa3d47436518a1da0",
+        "size": 6357648
+      },
+      "merged": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.22/weather_clock_v1.6.22_merged.bin",
+        "sha256": "e1cf8f1cba50ebb82342904f3de5195edfe730f74e6341c35ac799a63c01c570",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.21",
       "notes": "v1.6.21：共 1 项更新。\n1. 新增网络广播功能：小智 AI 页说\"播放北京新闻广播\"即可收听直播，\"关闭广播\"停止；对话期间自动暂停、说完续播，离开页面自动停止，播放期间关闭 Wi-Fi 省电以保流畅。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.13/weather_clock_v1.6.13_merged.bin",
         "sha256": "1afbcc6a9535b8860cbdfb66b84ae4410d346084dba9722650f19766321fa3f0",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.12",
-      "notes": "v1.6.12：共 4 项更新。\n1. 修复 NTP 备用服务器未实际启用的问题，优先使用阿里时间服务器，并启用腾讯与公共时间…\n2. 增强和风天气慢请求与失败阶段诊断，便于定位连接、首包等待及响应耗时异常。\n3. 显示刷新诊断改为每小时汇总，页面切换时仍即时记录，减少重复日志。\n4. 优化天气时钟动画差分绘制，跳过未变化像素，降低秒级动画的处理开销。\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.12/weather_clock_v1.6.12.bin",
-        "sha256": "c6b7b00979805749050348c39754e8f0708e13ee2d1bd674d5e0f3d480d50023",
-        "size": 6311648
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.12/weather_clock_v1.6.12_merged.bin",
-        "sha256": "b4bec35e7218e512788f0e418dc6ae82a5b133d319bddd6b994d8a6896b27ad3",
         "size": 16509951
       }
     }
