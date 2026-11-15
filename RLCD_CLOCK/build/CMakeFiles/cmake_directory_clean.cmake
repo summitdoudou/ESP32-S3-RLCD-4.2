@@ -1,0 +1,13 @@
+file(REMOVE_RECURSE
+  "config/sdkconfig.h"
+  "config/sdkconfig.cmake"
+  "bootloader/bootloader.elf"
+  "bootloader/bootloader.bin"
+  "bootloader/bootloader.map"
+  "weather_clock.bin"
+  "flash_project_args"
+  "weather_clock.map"
+  "project_elf_src_esp32s3.c"
+  "ldgen_libraries.in"
+  "ldgen_libraries"
+)

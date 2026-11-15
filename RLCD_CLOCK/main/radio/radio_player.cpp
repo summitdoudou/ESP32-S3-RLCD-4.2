@@ -36,6 +36,8 @@ constexpr const char kStationUrl[] =
     ".cn/live/339/64k.mp3";
 
 constexpr size_t kRawBufferBytes = 16 * 1024;
+// xiaozhi 扬声器整条链（AEC 参考/淡入淡出/共享 I2S 时钟）锁定 16k，广播流须重采样到此率。
+constexpr uint32_t kRadioTargetSampleRate = 16000;
 constexpr size_t kPcmBufferBytes = micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES * 2;
 constexpr int kHttpIoTimeoutMs = 4000;
 constexpr int kHttpSocketBufferBytes = 8192;
@@ -80,6 +82,44 @@ size_t downmix_to_mono_inplace(int16_t *samples, size_t samples_per_channel)
     return samples_per_channel;
 }
 
+// 就地重采样单声道流到 16000 Hz，返回输出样本数（<= in_count）。
+// 整数倍（48k→16k=3x、32k→16k=2x）用箱式低通避免走音/混叠；非整数倍线性插值。
+size_t resample_to_16k_inplace(int16_t *mono, size_t in_count, uint32_t in_rate)
+{
+    if (in_count == 0 || in_rate == kRadioTargetSampleRate) {
+        return in_count;
+    }
+    const uint32_t out_count =
+        static_cast<uint32_t>(in_count) * kRadioTargetSampleRate / in_rate;
+    if (out_count == 0) {
+        return 0;
+    }
+    if (in_rate % kRadioTargetSampleRate == 0) {
+        const uint32_t ratio = in_rate / kRadioTargetSampleRate;
+        for (uint32_t o = 0; o < out_count; ++o) {
+            int32_t acc = 0;
+            const size_t base = static_cast<size_t>(o) * ratio;
+            for (uint32_t k = 0; k < ratio && base + k < in_count; ++k) {
+                acc += mono[base + k];
+            }
+            mono[o] = static_cast<int16_t>(acc / static_cast<int32_t>(ratio));
+        }
+        return out_count;
+    }
+    // 读位置恒 >= 写位置（in_rate>16000），就地写安全。
+    for (uint32_t o = 0; o < out_count; ++o) {
+        const uint64_t num = static_cast<uint64_t>(o) * in_rate;
+        const uint32_t i0 = static_cast<uint32_t>(num / kRadioTargetSampleRate);
+        const uint32_t frac = static_cast<uint32_t>(num % kRadioTargetSampleRate);
+        const int32_t s0 = (i0 < in_count) ? mono[i0] : 0;
+        const int32_t s1 = (i0 + 1 < in_count) ? mono[i0 + 1] : s0;
+        mono[o] = static_cast<int16_t>(
+            s0 + static_cast<int32_t>((static_cast<int64_t>(s1 - s0) * frac) /
+                                      kRadioTargetSampleRate));
+    }
+    return out_count;
+}
+
 // 播放一段 PCM。TTS 占用扬声器时直接丢弃（直播流丢弃即保持与“现在”同步）。
 bool emit_pcm(int16_t *pcm, size_t samples_per_channel, uint32_t rate,
               uint8_t channels)
@@ -94,8 +134,12 @@ bool emit_pcm(int16_t *pcm, size_t samples_per_channel, uint32_t rate,
     if (tts_playback_busy()) {
         return true;
     }
+    mono_samples = resample_to_16k_inplace(pcm, mono_samples, rate);
+    if (mono_samples == 0) {
+        return true;
+    }
     const int written = write_xiaozhi_speaker(
-        pcm, mono_samples, static_cast<int>(rate));
+        pcm, mono_samples, static_cast<int>(kRadioTargetSampleRate));
     if (written != ESP_CODEC_DEV_OK) {
         ESP_LOGW(TAG, "radio speaker write failed: %d", written);
         return false;

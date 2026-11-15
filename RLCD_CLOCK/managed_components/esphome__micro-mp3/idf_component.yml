@@ -1,0 +1,30 @@
+dependencies:
+  idf: '>=4.4'
+description: Streaming MP3 decoder for embedded devices. Fixed-point decoder forked
+  from OpenCore with frame synchronization, PSRAM-aware allocation, and lazy initialization.
+  Supports MPEG 1, 2, and 2.5 Layer III.
+files:
+  exclude:
+  - .cache/**
+  - .claude/**
+  - .github/**
+  - .clang-*
+  - .clangd
+  - .markdownlint.yaml
+  - .pre-commit-config.yaml
+  - host_examples/**
+  - examples/**
+  - tests/**
+  - script/**
+  - CLAUDE.md
+  - compile_commands.json
+  - '*.mp3'
+license: Apache-2.0
+maintainers:
+- Kevin Ahrendt <kevin.ahrendt@openhomefoundation.org>
+repository: git://github.com/esphome-libs/micro-mp3.git
+repository_info:
+  commit_sha: f70fc223e11646497cc321ea449d346afe85d906
+  path: .
+url: https://github.com/esphome-libs/micro-mp3
+version: 0.4.0

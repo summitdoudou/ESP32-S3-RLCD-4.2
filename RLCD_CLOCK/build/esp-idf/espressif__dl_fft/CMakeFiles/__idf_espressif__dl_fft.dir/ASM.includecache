@@ -1,0 +1,14 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/opt/data/cache/rlcd_build/rlcd/RLCD_CLOCK/managed_components/espressif__dl_fft/base/isa/esp32s3/dl_fft2r_fc32_aes3.S
+
+/opt/data/cache/rlcd_build/rlcd/RLCD_CLOCK/managed_components/espressif__dl_fft/base/isa/esp32s3/dl_fft2r_sc16_aes3.S
+
+/opt/data/cache/rlcd_build/rlcd/RLCD_CLOCK/managed_components/espressif__dl_fft/base/isa/esp32s3/dl_fft4r_fc32_aes3.S
+

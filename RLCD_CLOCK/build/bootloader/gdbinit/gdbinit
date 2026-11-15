@@ -1,0 +1,2 @@
+source /opt/data/cache/rlcd_build/rlcd/RLCD_CLOCK/build/bootloader/gdbinit/symbols
+source /opt/data/cache/rlcd_build/rlcd/RLCD_CLOCK/build/bootloader/gdbinit/connect
