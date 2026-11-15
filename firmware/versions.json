@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.22",
+  "latest": "v1.6.23",
   "items": [
+    {
+      "version": "v1.6.23",
+      "notes": "v1.6.23：共 2 项更新。\n1. 网络广播支持后台播放：离开小智 AI 页后继续收听；小智页在场时借用其通道播放，对话自动暂停、说完续播；说\"关闭广播\"才会停止；低电量自动退出广播。\n2. 小智页空闲自动退出修复：待机聆听状态不再阻止\"小智节能\"回首页，5 分钟无交互自动返回。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.23/weather_clock_v1.6.23.bin",
+        "sha256": "7345a6780ce90d07588b234e4fe6e5f29f1f8c0f1721d819514790b798641a75",
+        "size": 6358400
+      },
+      "merged": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.23/weather_clock_v1.6.23_merged.bin",
+        "sha256": "53ec22cbd6a349b8862f81a3dabdb89dc52e788c396dc1182442e1b0e835a6ae",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.22",
       "notes": "v1.6.22：共 1 项更新。\n1. 修复网络广播播放变慢、声音低沉拉长的问题：北京新闻广播为 48kHz 立体声流，改为重采样到 16kHz 单声道再送扬声器，与小智音频链路时钟对齐。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.14/weather_clock_v1.6.14_merged.bin",
         "sha256": "c371a641dc19c95b3403243c31e0ac2adbda019001567f6b1d955e6a06c12226",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.13",
-      "notes": "v1.6.13：共 1 项更新。\n1. 修复零点附近成功校时后短时间内重复进行 NTP 同步的问题，减少不必要的 Wi-Fi…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.13/weather_clock_v1.6.13.bin",
-        "sha256": "d019bcc6f2f4edb4ddf80de7f73f64f692599f02aa9536728906aee957a966d3",
-        "size": 6311696
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.13/weather_clock_v1.6.13_merged.bin",
-        "sha256": "1afbcc6a9535b8860cbdfb66b84ae4410d346084dba9722650f19766321fa3f0",
         "size": 16509951
       }
     }
