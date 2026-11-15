@@ -39,6 +39,7 @@ constexpr size_t kToolResultTextLen = 256;
 using xiaozhi_mcp_schema::kDeviceStatusTool;
 using xiaozhi_mcp_schema::kDisableAlarmTool;
 using xiaozhi_mcp_schema::kPomodoroControlTool;
+using xiaozhi_mcp_schema::kRadioControlTool;
 using xiaozhi_mcp_schema::kSetAlarmTool;
 using xiaozhi_mcp_schema::kSetCountdownTool;
 using xiaozhi_mcp_schema::kSetVolumeTool;
@@ -53,6 +54,7 @@ XiaozhiMcpAlarmDisableHandler s_alarm_disable_handler = nullptr;
 XiaozhiMcpCountdownHandler s_countdown_handler = nullptr;
 XiaozhiMcpPomodoroHandler s_pomodoro_handler = nullptr;
 XiaozhiMcpWeatherCityHandler s_weather_city_handler = nullptr;
+XiaozhiMcpRadioHandler s_radio_handler = nullptr;
 
 cJSON *create_tool_content(const char *text, bool is_error)
 {
@@ -208,6 +210,21 @@ cJSON *call_weather_city(const cJSON *arguments)
                : create_tool_content(result[0] ? result : "weather city request rejected", true);
 }
 
+cJSON *call_radio(const cJSON *arguments)
+{
+    if (!s_radio_handler) {
+        return nullptr;
+    }
+    XiaozhiMcpRadioRequest request = {};
+    if (!xiaozhi_mcp_arguments::parse_radio(arguments, &request)) {
+        return nullptr;
+    }
+    char result[kToolResultTextLen] = {};
+    return s_radio_handler(request, result, sizeof(result))
+               ? create_tool_content(result, false)
+               : create_tool_content(result[0] ? result : "radio request rejected", true);
+}
+
 cJSON *create_tool_call_result(const cJSON *params,
                                bool allow_alarm_disable,
                                int *error_code,
@@ -272,6 +289,14 @@ cJSON *create_tool_call_result(const cJSON *params,
         if (!result) {
             *error_code = kJsonRpcInvalidParams;
             *error_message = "city must be a non-empty string";
+        }
+        return result;
+    }
+    if (strcmp(name->valuestring, kRadioControlTool) == 0 && s_radio_handler) {
+        cJSON *result = call_radio(arguments);
+        if (!result) {
+            *error_code = kJsonRpcInvalidParams;
+            *error_message = "radio action must be start, stop or status";
         }
         return result;
     }
@@ -396,7 +421,8 @@ XiaozhiMcpMessageResult xiaozhi_mcp_handle_message(const char *message,
                                                               s_alarm_disable_handler != nullptr,
                                                               s_countdown_handler != nullptr,
                                                               s_pomodoro_handler != nullptr,
-                                                              s_weather_city_handler != nullptr);
+                                                              s_weather_city_handler != nullptr,
+                                                              s_radio_handler != nullptr);
     } else if (strcmp(method, kMcpToolsCallMethod) == 0) {
         result = create_tool_call_result(params,
                                          allow_alarm_disable,
@@ -461,4 +487,9 @@ void xiaozhi_mcp_register_pomodoro_handler(XiaozhiMcpPomodoroHandler handler)
 void xiaozhi_mcp_register_weather_city_handler(XiaozhiMcpWeatherCityHandler handler)
 {
     s_weather_city_handler = handler;
+}
+
+void xiaozhi_mcp_register_radio_handler(XiaozhiMcpRadioHandler handler)
+{
+    s_radio_handler = handler;
 }

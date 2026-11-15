@@ -11,4 +11,5 @@ bool parse_alarm(const cJSON *arguments, XiaozhiMcpAlarmRequest *request);
 bool parse_countdown(const cJSON *arguments, XiaozhiMcpCountdownRequest *request);
 bool parse_pomodoro(const cJSON *arguments, XiaozhiMcpPomodoroRequest *request);
 bool parse_weather_city(const cJSON *arguments, XiaozhiMcpWeatherCityRequest *request);
+bool parse_radio(const cJSON *arguments, XiaozhiMcpRadioRequest *request);
 } // namespace xiaozhi_mcp_arguments

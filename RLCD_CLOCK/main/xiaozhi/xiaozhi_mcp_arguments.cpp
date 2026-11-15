@@ -11,6 +11,9 @@ constexpr const char *kJsonFieldDurationSeconds = "duration_seconds";
 constexpr const char *kPomodoroActionStart = "start";
 constexpr const char *kPomodoroActionCancel = "cancel";
 constexpr const char *kPomodoroActionStatus = "status";
+constexpr const char *kRadioActionStart = "start";
+constexpr const char *kRadioActionStop = "stop";
+constexpr const char *kRadioActionStatus = "status";
 constexpr int kHoursPerDay = 24;
 constexpr int kMinutesPerHour = 60;
 constexpr uint32_t kMaxCountdownSeconds = 7U * 24U * 60U * 60U;
@@ -157,6 +160,29 @@ bool parse_weather_city(const cJSON *arguments, XiaozhiMcpWeatherCityRequest *re
     XiaozhiMcpWeatherCityRequest parsed = {};
     const size_t city_len = std::strlen(city->valuestring);
     std::memcpy(parsed.city, city->valuestring, city_len + 1);
+    *request = parsed;
+    return true;
+}
+
+bool parse_radio(const cJSON *arguments, XiaozhiMcpRadioRequest *request)
+{
+    if (!request || !arguments || !cJSON_IsObject(arguments)) {
+        return false;
+    }
+    const cJSON *action = cJSON_GetObjectItem(arguments, kJsonFieldAction);
+    if (!action || !cJSON_IsString(action) || !action->valuestring) {
+        return false;
+    }
+    XiaozhiMcpRadioRequest parsed = {};
+    if (std::strcmp(action->valuestring, kRadioActionStart) == 0) {
+        parsed.action = kXiaozhiMcpRadioStart;
+    } else if (std::strcmp(action->valuestring, kRadioActionStop) == 0) {
+        parsed.action = kXiaozhiMcpRadioStop;
+    } else if (std::strcmp(action->valuestring, kRadioActionStatus) == 0) {
+        parsed.action = kXiaozhiMcpRadioStatus;
+    } else {
+        return false;
+    }
     *request = parsed;
     return true;
 }

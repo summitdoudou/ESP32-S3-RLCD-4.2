@@ -38,6 +38,16 @@ struct XiaozhiMcpPomodoroRequest {
     uint32_t duration_seconds;
 };
 
+enum XiaozhiMcpRadioAction {
+    kXiaozhiMcpRadioStart = 0,
+    kXiaozhiMcpRadioStop,
+    kXiaozhiMcpRadioStatus,
+};
+
+struct XiaozhiMcpRadioRequest {
+    XiaozhiMcpRadioAction action;
+};
+
 using XiaozhiMcpAlarmHandler = bool (*)(const XiaozhiMcpAlarmRequest &request,
                                         char *result,
                                         size_t result_len);
@@ -51,6 +61,9 @@ using XiaozhiMcpWeatherCityHandler = bool (*)(const XiaozhiMcpWeatherCityRequest
 using XiaozhiMcpPomodoroHandler = bool (*)(const XiaozhiMcpPomodoroRequest &request,
                                            char *result,
                                            size_t result_len);
+using XiaozhiMcpRadioHandler = bool (*)(const XiaozhiMcpRadioRequest &request,
+                                       char *result,
+                                       size_t result_len);
 
 XiaozhiMcpMessageResult xiaozhi_mcp_handle_message(const char *message,
                                                    size_t message_len,
@@ -68,3 +81,4 @@ void xiaozhi_mcp_register_alarm_disable_handler(XiaozhiMcpAlarmDisableHandler ha
 void xiaozhi_mcp_register_countdown_handler(XiaozhiMcpCountdownHandler handler);
 void xiaozhi_mcp_register_pomodoro_handler(XiaozhiMcpPomodoroHandler handler);
 void xiaozhi_mcp_register_weather_city_handler(XiaozhiMcpWeatherCityHandler handler);
+void xiaozhi_mcp_register_radio_handler(XiaozhiMcpRadioHandler handler);

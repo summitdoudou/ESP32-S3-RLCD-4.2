@@ -7,6 +7,7 @@
 #include "app_metadata.h"
 #include "alarm_services.h"
 #include "audio_services.h"
+#include "radio_player.h"
 #include "network_credentials_state.h"
 #include "network_https_resources.h"
 #include "offline_mode_state.h"
@@ -380,6 +381,7 @@ bool run_voice_conversation()
             break;
         }
     }
+    radio_player_stop();
     xiaozhi_tts_playback_stop();
     xiaozhi_voice_stop();
     codec_runtime.release();
@@ -391,6 +393,7 @@ bool run_voice_conversation()
 
 void stop_voice_session()
 {
+    radio_player_stop();
     xiaozhi_voice_stop();
     s_voice_started = false;
 }

@@ -12,12 +12,14 @@ extern const char kDisableAlarmTool[];
 extern const char kSetCountdownTool[];
 extern const char kPomodoroControlTool[];
 extern const char kSetWeatherCityTool[];
+extern const char kRadioControlTool[];
 
 cJSON *create_tools_list_result(bool alarm_enabled,
                                 bool alarm_disable_enabled,
                                 bool countdown_enabled,
                                 bool pomodoro_enabled,
-                                bool weather_city_enabled);
+                                bool weather_city_enabled,
+                                bool radio_enabled);
 cJSON *create_initialize_result(const char *app_version);
 
 } // namespace xiaozhi_mcp_schema

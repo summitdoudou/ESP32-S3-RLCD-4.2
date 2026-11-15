@@ -13,6 +13,7 @@ const char kDisableAlarmTool[] = "self.alarm.disable";
 const char kSetCountdownTool[] = "self.timer.set_countdown";
 const char kPomodoroControlTool[] = "self.pomodoro.control";
 const char kSetWeatherCityTool[] = "self.weather.set_city";
+const char kRadioControlTool[] = "self.radio.control";
 
 namespace {
 constexpr const char *kMcpProtocolVersion = "2024-11-05";
@@ -45,6 +46,12 @@ constexpr const char *kPomodoroControlDescription =
     "Do not use alarm tools for focus or Pomodoro requests, and do not use this tool for ordinary reminders.";
 constexpr const char *kSetWeatherCityDescription =
     "Set the QWeather location from the user's spoken city name. Pass the city exactly as spoken, including an optional Chinese 市 suffix; the device normalizes and validates a manual city with QWeather before saving. To restore IP-based automatic location, call this same tool with city=自动. Never claim the location changed unless the tool returned success.";
+constexpr const char *kRadioControlDescription =
+    "Control the live internet radio broadcast player on this device. The only supported station is Beijing News Radio (北京新闻广播). "
+    "You MUST call this tool for every request about listening to 广播, 电台, 收音机, 北京新闻广播, news radio or live radio broadcast. "
+    "Use action=start to begin playing the live broadcast, action=stop to stop it, and action=status to query playback state. "
+    "Radio plays only while the Xiaozhi AI page session is active and automatically pauses while you are speaking. "
+    "Never claim the radio started or stopped unless this tool returned success.";
 constexpr int kHoursPerDay = 24;
 constexpr int kMinutesPerHour = 60;
 constexpr uint32_t kMaxCountdownSeconds = 7U * 24U * 60U * 60U;
@@ -272,11 +279,54 @@ bool add_tool_if_present(cJSON *tools, cJSON *tool)
 }
 } // namespace
 
+bool add_required_action_enum(cJSON *schema, const char *const *values, size_t count)
+{
+    cJSON *properties = schema ? cJSON_GetObjectItem(schema, kJsonFieldProperties) : nullptr;
+    cJSON *property = cJSON_CreateObject();
+    cJSON *array = cJSON_CreateArray();
+    cJSON *required = cJSON_CreateArray();
+    if (!cJSON_IsObject(properties) || !property || !array || !required ||
+        !add_string(property, kJsonFieldType, kJsonTypeString)) {
+        cJSON_Delete(property);
+        cJSON_Delete(array);
+        cJSON_Delete(required);
+        return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (!add_owned_item_to_array(array, cJSON_CreateString(values[i]))) {
+            cJSON_Delete(property);
+            cJSON_Delete(array);
+            cJSON_Delete(required);
+            return false;
+        }
+    }
+    if (!add_owned_item_to_object(property, "enum", array) ||
+        !add_owned_item_to_array(required, cJSON_CreateString(kJsonFieldAction)) ||
+        !add_owned_item_to_object(properties, kJsonFieldAction, property)) {
+        cJSON_Delete(property);
+        cJSON_Delete(required);
+        return false;
+    }
+    return add_owned_item_to_object(schema, kJsonFieldRequired, required);
+}
+
+cJSON *create_radio_tool()
+{
+    static const char *const kRadioActions[] = {"start", "stop", "status"};
+    cJSON *schema = create_object_schema();
+    if (!schema || !add_required_action_enum(schema, kRadioActions, 3)) {
+        cJSON_Delete(schema);
+        return nullptr;
+    }
+    return create_tool(kRadioControlTool, kRadioControlDescription, schema);
+}
+
 cJSON *create_tools_list_result(bool alarm_enabled,
                                 bool alarm_disable_enabled,
                                 bool countdown_enabled,
                                 bool pomodoro_enabled,
-                                bool weather_city_enabled)
+                                bool weather_city_enabled,
+                                bool radio_enabled)
 {
     cJSON *result = cJSON_CreateObject();
     if (!result) {
@@ -302,7 +352,8 @@ cJSON *create_tools_list_result(bool alarm_enabled,
                                                  create_object_schema()))) ||
         (countdown_enabled && !add_tool_if_present(tools, create_countdown_tool())) ||
         (pomodoro_enabled && !add_tool_if_present(tools, create_pomodoro_tool())) ||
-        (weather_city_enabled && !add_tool_if_present(tools, create_weather_city_tool()))) {
+        (weather_city_enabled && !add_tool_if_present(tools, create_weather_city_tool())) ||
+        (radio_enabled && !add_tool_if_present(tools, create_radio_tool()))) {
         cJSON_Delete(tools);
         cJSON_Delete(result);
         return nullptr;
