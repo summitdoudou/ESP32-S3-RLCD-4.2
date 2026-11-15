@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.24",
+  "latest": "v1.6.25",
   "items": [
+    {
+      "version": "v1.6.25",
+      "notes": "v1.6.25：共 2 项修复（真机反馈）。\n1. 修复广播播放中切回小智页卡在\"启动小智中\"：借道播放改为等待小智音频会话真正建立，广播不再抢先占用播放门与 Codec。\n2. 修复后台广播一顿一顿：独立会话模式去掉过时的 TTS 丢帧闸门，起播预灌加大到约 2 秒、缓冲加大到 32KB。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.25/weather_clock_v1.6.25.bin",
+        "sha256": "c54ae3a2621aa0b4d47174746be6ddb208dbb6b2419d65ad19c649f692be0900",
+        "size": 6358480
+      },
+      "merged": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.25/weather_clock_v1.6.25_merged.bin",
+        "sha256": "19e7d64596683941449de1aa8ec04a0472b5297659625668bfb4eec979784db1",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.24",
       "notes": "v1.6.24：共 3 项更新。\n1. 网络广播支持后台播放：离开小智 AI 页后继续收听；小智页在场时借用其通道播放，对话自动暂停、说完续播；说\"关闭广播\"才会停止；低电量自动退出广播。\n2. 闹钟与番茄钟完成音自动让位广播并播完续播。\n3. 小智页空闲自动退出修复：待机聆听状态不再阻止\"小智节能\"回首页，5 分钟无交互自动返回。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.16/weather_clock_v1.6.16_merged.bin",
         "sha256": "745900bbfe7dd7036b8f8d47b5b7fec6b94e43acc1b7f1a1a8af7356675c7e7e",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.15",
-      "notes": "v1.6.15：共 1 项更新。\n1. 聚合时钟新增雾天视觉，使用错落的横向雾带与点阵过渡。\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.15/weather_clock_v1.6.15.bin",
-        "sha256": "da57f99486317667e9e8f1df32eb20b599f251dcfde73fb6b39ed8f03d6c9b6e",
-        "size": 6316144
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.15/weather_clock_v1.6.15_merged.bin",
-        "sha256": "5af1a27ed597a9c91c447a69951b9cf6853962adde59f1fa3828197312637968",
         "size": 16509951
       }
     }
