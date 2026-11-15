@@ -6,6 +6,7 @@
 #include "app_task_readiness.h"
 #include "app_tick_time.h"
 #include "audio_services.h"
+#include "radio_player.h"
 #include "battery_runtime_state.h"
 #include "ota_runtime_state.h"
 #include "pomodoro_runtime_state_internal.h"
@@ -109,6 +110,8 @@ void play_completion_audio()
     s_stop_alert_requested.store(false);
     set_alerting(true);
     xiaozhi_ai_set_pomodoro_audio_suspended(true);
+    // 后台广播让位，番茄钟完成音播完后恢复续播。
+    radio_player_pause_for_xiaozhi();
     const bool audio_idle =
         wait_for_audio_playback_idle(kAudioReleaseWaitMs,
                                      kAudioReleasePollMs,
@@ -119,6 +122,7 @@ void play_completion_audio()
                                                  completion_stop_requested);
     }
     xiaozhi_ai_set_pomodoro_audio_suspended(false);
+    radio_player_resume_after_xiaozhi();
     set_alerting(false);
 }
 

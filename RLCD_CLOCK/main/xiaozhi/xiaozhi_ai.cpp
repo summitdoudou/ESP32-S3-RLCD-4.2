@@ -658,6 +658,8 @@ void xiaozhi_ai_set_page_active(bool active)
             return;
         }
         xEventGroupClearBits(s_events, kAiPageActiveBit);
+        // 离开小智页：归还独立会话给后台广播（服务若仍存活会自动续播）。
+        radio_player_resume_after_xiaozhi();
         app_event_group_set_bits(kXiaozhiPageStateChangedBit);
         xEventGroupSetBits(s_events, kAiWakeBit);
         return;

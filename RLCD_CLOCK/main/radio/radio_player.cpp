@@ -327,8 +327,11 @@ void radio_task(void *)
                     continue;
                 }
             } else {
-                // 页面已退出：让位目的已达成，清掉瞬时暂停，允许拿独立会话。
-                s_paused_for_xiaozhi.store(false);
+                if (s_paused_for_xiaozhi.load()) {
+                    // 仍在让位（小智页刚退出/闹钟番茄钟响铃中）：意图保留，静候 resume。
+                    vTaskDelay(pdMS_TO_TICKS(kSessionWaitDelayMs));
+                    continue;
+                }
                 if (!start_radio_audio_session()) {
                     vTaskDelay(pdMS_TO_TICKS(kSessionWaitDelayMs));
                     continue;

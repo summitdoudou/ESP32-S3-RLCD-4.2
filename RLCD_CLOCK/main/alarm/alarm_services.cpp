@@ -10,6 +10,7 @@
 #include "app_task_readiness.h"
 #include "app_tick_time.h"
 #include "audio_services.h"
+#include "radio_player.h"
 #include "pomodoro_services.h"
 #include "reminder_schedule.h"
 #include "runtime_health.h"
@@ -297,6 +298,8 @@ void run_alarm_ring()
     s_auto_disable_save_pending.store(false, std::memory_order_release);
     publish_alarm_state(false, true, snapshot.hour, snapshot.minute);
     wait_for_xiaozhi_audio_release();
+    // 后台广播让位：收段并释放播放门，闹钟响铃优先；结束后 resume 续播。
+    radio_player_pause_for_xiaozhi();
     if (!persist_alarm(false, snapshot.hour, snapshot.minute)) {
         ESP_LOGW(TAG, "alarm auto-disable persistence failed");
         s_auto_disable_save_pending.store(true, std::memory_order_release);
@@ -317,6 +320,7 @@ void run_alarm_ring()
         }
     }
     xiaozhi_ai_set_alarm_suspended(false);
+    radio_player_resume_after_xiaozhi();
     publish_alarm_state(false, false, snapshot.hour, snapshot.minute);
     if (!flush_alarm_auto_disable_save()) {
         ESP_LOGW(TAG, "alarm deferred auto-disable save failed");
