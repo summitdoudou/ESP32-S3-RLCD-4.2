@@ -430,6 +430,10 @@ void ensure_wake_word_listening()
     if (s_voice_started) {
         stop_voice_session();
     }
+    // 确定性让位：等后台广播交还独立音频会话/播放门再启动，避免在其收段窗口内
+    // 启动失败、有界重试耗尽后永远卡在"启动中"（v1.6.24/25 真机问题）。
+    // 广播借道模式（小智会话在场）不持独立会话，本等待立即返回，不影响唤醒重布防。
+    (void)radio_player_wait_quiet(3000);
     if (!xiaozhi_voice_start()) {
         xiaozhi_snapshot_set(kXiaozhiAiError, kErrorStatus, kWakeWordFailureDetail);
         // The listener owns no audio resources after a failed start. Drop the

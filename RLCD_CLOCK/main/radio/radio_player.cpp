@@ -42,7 +42,7 @@ constexpr size_t kRawBufferBytes = 32 * 1024;
 // xiaozhi 扬声器整条链（AEC 参考/淡入淡出/共享 I2S 时钟）锁定 16k，广播流须重采样到此率。
 constexpr uint32_t kRadioTargetSampleRate = 16000;
 constexpr size_t kPcmBufferBytes = micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES * 2;
-constexpr int kHttpIoTimeoutMs = 4000;
+constexpr int kHttpIoTimeoutMs = 1500;
 constexpr int kHttpSocketBufferBytes = 8192;
 // 起播预灌：先把压缩缓冲喂到 ~2 秒（79kbps≈20KB）再开播，抗网络突发。
 constexpr size_t kPrefillBytes = 20 * 1024;
@@ -504,4 +504,16 @@ void radio_player_resume_after_xiaozhi()
 bool radio_player_is_playing()
 {
     return s_playing.load();
+}
+
+// 有界等待广播交还独立音频会话（进小智页启动链路专用）。返回 true=已安静。
+bool radio_player_wait_quiet(uint32_t timeout_ms)
+{
+    for (uint32_t waited = 0; waited < timeout_ms; waited += 50) {
+        if (!radio_audio_session_active()) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return !radio_audio_session_active();
 }

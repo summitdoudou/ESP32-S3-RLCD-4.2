@@ -7,6 +7,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 // 注册广播 MCP 工具 handler，在功能初始化表中调用。
 bool radio_player_init();
@@ -24,3 +25,5 @@ void radio_player_resume_after_xiaozhi();
 
 // 当前是否正在出声。
 bool radio_player_is_playing();
+// 有界等待广播交还独立音频会话；小智启动前调用，返回 true 表示已安静。
+bool radio_player_wait_quiet(uint32_t timeout_ms);
