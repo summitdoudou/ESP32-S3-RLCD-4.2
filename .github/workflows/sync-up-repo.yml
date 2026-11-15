@@ -1,0 +1,105 @@
+name: 同步固件到 Pages 分发仓库
+
+on:
+  workflow_run:
+    workflows: ['构建固件并附加到 Release']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要同步的版本标签，例如 v1.6.21"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: 发布到 esp32-s3-rlcd-4.2-up
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 确定版本
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            v="${{ inputs.version }}"
+          else
+            v="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${{ github.event.workflow_run.id }}/artifacts" --jq '.artifacts[] | select(.name | startswith("weather-clock-v")) | .name | sub("^weather-clock-";"")')"
+          fi
+          if [[ ! "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "版本无效：$v" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: 下载 App 固件
+        env:
+          GH_TOKEN: ${{ secrets.UP_SYNC_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --retry-all-errors -o "weather_clock_${VERSION}.bin" \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/weather_clock_${VERSION}.bin"
+          test "$(wc -c < "weather_clock_${VERSION}.bin")" -gt 1000000
+
+      - name: 生成清单并推送到分发仓库
+        env:
+          GH_TOKEN: ${{ secrets.UP_SYNC_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          UP_REPO: summitdoudou/esp32-s3-rlcd-4.2-up
+          PAGES_BASE: https://summitdoudou.github.io/esp32-s3-rlcd-4.2-up
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$RUNNER_TEMP/up-sync"
+          rm -rf "$tmp"
+          gh repo clone "$UP_REPO" "$tmp" -- --quiet
+          mkdir -p "$tmp/firmware"
+          cp "weather_clock_${VERSION}.bin" "$tmp/firmware/"
+          bin="weather_clock_${VERSION}.bin"
+          sha="$(sha256sum "$bin" | cut -d' ' -f1)"
+          size="$(wc -c < "$bin")"
+          notes="$(gh release view "$VERSION" --json body --jq .body)"
+          python3 - "$tmp/firmware" "$PAGES_BASE" "$VERSION" "$bin" "$sha" "$size" "$notes" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          fw, base, version, binary, sha, size, notes = sys.argv[1:]
+          fw = pathlib.Path(fw)
+          latest = {
+              "version": version,
+              "url": f"{base}/firmware/{binary}",
+              "sha256": sha,
+              "size": int(size),
+              "notes": notes,
+          }
+          (fw / "latest.json").write_text(
+              json.dumps(latest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          vp = fw / "versions.json"
+          history = json.loads(vp.read_text(encoding="utf-8")) if vp.exists() else []
+          if not any(item.get("version") == version for item in history):
+              history.insert(0, latest)
+          vp.write_text(
+              json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+          cd "$tmp"
+          git config user.name "Firmware Up Sync"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A firmware
+          if git diff --cached --quiet; then
+            echo "分发仓库已是最新，无需推送"
+          else
+            git commit -m "Publish $VERSION firmware"
+            git push --quiet origin HEAD:main
+            echo "已推送 $VERSION 到 $UP_REPO"
+          fi
