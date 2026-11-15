@@ -29,6 +29,11 @@ void play_hourly_chime(int hour, bool enforce_quiet_hours = true);
 // 结束时必须调用 stop_xiaozhi_audio_session() 归还音频与轻睡眠锁。
 bool start_xiaozhi_audio_session();
 void stop_xiaozhi_audio_session();
+// 后台广播独立音频会话：只开扬声器、不开麦克风，与小智会话共用播放互斥门。
+// 小智页需要接管音频时，广播必须先 stop_radio_audio_session() 让位。
+bool start_radio_audio_session();
+void stop_radio_audio_session();
+bool radio_audio_session_active();
 bool set_xiaozhi_audio_high_performance(bool enabled);
 int read_xiaozhi_microphone(void *buffer, size_t bytes);
 int write_xiaozhi_speaker(const int16_t *mono_samples, size_t sample_count, int sample_rate);

@@ -381,7 +381,6 @@ bool run_voice_conversation()
             break;
         }
     }
-    radio_player_stop();
     xiaozhi_tts_playback_stop();
     xiaozhi_voice_stop();
     codec_runtime.release();
@@ -393,7 +392,6 @@ bool run_voice_conversation()
 
 void stop_voice_session()
 {
-    radio_player_stop();
     xiaozhi_voice_stop();
     s_voice_started = false;
 }
@@ -665,6 +663,8 @@ void xiaozhi_ai_set_page_active(bool active)
         return;
     }
     if (!already_active) {
+        // 进入小智页：让持有独立会话的广播立即收段交还，随后广播借道小智会话播放。
+        radio_player_pause_for_xiaozhi();
         app_event_group_clear_bits(kXiaozhiPageStateChangedBit);
         xEventGroupSetBits(s_events, kAiPageActiveBit | kAiWakeBit);
     }

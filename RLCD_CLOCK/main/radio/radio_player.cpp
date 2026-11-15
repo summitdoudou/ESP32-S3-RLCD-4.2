@@ -4,6 +4,9 @@
 #include "radio_player.h"
 
 #include "audio_services.h"
+#include "battery_runtime_state.h"
+#include "network_task_guards.h"
+#include "xiaozhi_ai.h"
 #include "xiaozhi_mcp.h"
 #include "xiaozhi_tts_playback.h"
 
@@ -45,7 +48,8 @@ constexpr int kHttpSocketBufferBytes = 8192;
 constexpr size_t kPrefillBytes = 10 * 1024;
 constexpr uint32_t kPrefillWaitMs = 1500;
 constexpr uint32_t kReconnectDelayMs = 1000;
-constexpr uint32_t kMaxReconnectAttempts = 8;
+constexpr uint32_t kReconnectBackoffMaxMs = 15000;
+constexpr uint32_t kSessionWaitDelayMs = 500;
 constexpr size_t kTaskStackBytes = 8192;
 constexpr UBaseType_t kTaskPriority = 5;
 constexpr BaseType_t kTaskCore = 1;
@@ -58,12 +62,22 @@ enum class DecodeOutcome : uint8_t {
     kStreamEnded,  // 播放中被要求停止
 };
 
+std::atomic<bool> s_want{false};        // 后台播放意图（服务存续标志）
 std::atomic<bool> s_playing{false};
-std::atomic<bool> s_stop_request{true};
+std::atomic<bool> s_stop_request{true}; // 停止整个服务
+std::atomic<bool> s_segment_stop{false}; // 结束当前流段（让位/抢占）
+std::atomic<bool> s_paused_for_xiaozhi{false};
 std::atomic<bool> s_task_exited{true};
 TaskHandle_t s_task = nullptr;
 StaticTask_t s_task_buffer = {};
 StackType_t *s_task_stack = nullptr;
+
+// 段内统一退避检查：服务停止、意图消失、刚切入小智页（需让出独立会话）时收束当前段。
+bool radio_segment_should_yield()
+{
+    return s_stop_request.load() || !s_want.load() || s_segment_stop.load() ||
+           s_paused_for_xiaozhi.load();
+}
 
 bool tts_playback_busy()
 {
@@ -157,7 +171,7 @@ size_t decode_buffer(micro_mp3::Mp3Decoder &decoder,
     size_t offset = 0;
     *outcome = DecodeOutcome::kNeedMore;
     while (offset < raw_len) {
-        if (s_stop_request.load()) {
+        if (radio_segment_should_yield()) {
             *outcome = DecodeOutcome::kStreamEnded;
             break;
         }
@@ -212,6 +226,65 @@ bool open_radio_stream(esp_http_client_handle_t client)
     return esp_http_client_get_status_code(client) == 200;
 }
 
+// 播一段流。前提：调用方已持有 radio 音频会话。返回本段是否成功出过数据。
+bool stream_segment(micro_mp3::Mp3Decoder &decoder, uint8_t *raw, uint8_t *pcm)
+{
+    esp_http_client_config_t http_cfg = {};
+    http_cfg.url = kStationUrl;
+    http_cfg.timeout_ms = kHttpIoTimeoutMs;
+    http_cfg.buffer_size = kHttpSocketBufferBytes;
+    http_cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    const esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
+    if (!client) {
+        return false;
+    }
+    bool got_data = false;
+    DecodeOutcome outcome = DecodeOutcome::kNeedMore;
+    if (open_radio_stream(client)) {
+        decoder.reset();
+        size_t raw_len = 0;
+        s_playing.store(true);
+        // 预灌：先攒约 1 秒压缩数据（最多等 1.5s）再开播。
+        const int64_t prefill_deadline_us =
+            esp_timer_get_time() + static_cast<int64_t>(kPrefillWaitMs) * 1000;
+        while (!radio_segment_should_yield() && raw_len < kPrefillBytes &&
+               esp_timer_get_time() < prefill_deadline_us) {
+            const int got = esp_http_client_read(
+                client, reinterpret_cast<char *>(raw) + raw_len,
+                static_cast<int>(kRawBufferBytes - raw_len));
+            if (got <= 0) {
+                break;
+            }
+            got_data = true;
+            raw_len += static_cast<size_t>(got);
+        }
+        while (!radio_segment_should_yield()) {
+            raw_len = decode_buffer(decoder, raw, raw_len, pcm, &outcome);
+            if (outcome != DecodeOutcome::kNeedMore) {
+                break;
+            }
+            if (raw_len >= kRawBufferBytes) {
+                // 解码无法消费（异常流），断开重连。
+                outcome = DecodeOutcome::kFatal;
+                break;
+            }
+            const int got = esp_http_client_read(
+                client, reinterpret_cast<char *>(raw) + raw_len,
+                static_cast<int>(kRawBufferBytes - raw_len));
+            if (got <= 0) {
+                // 负值为错误，0 视为直播连接结束，均触发重连。
+                break;
+            }
+            got_data = true;
+            raw_len += static_cast<size_t>(got);
+        }
+        s_playing.store(false);
+    }
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    return got_data;
+}
+
 void radio_task(void *)
 {
     uint8_t *raw = static_cast<uint8_t *>(
@@ -220,77 +293,70 @@ void radio_task(void *)
         heap_caps_malloc(kPcmBufferBytes, MALLOC_CAP_SPIRAM));
     micro_mp3::Mp3Decoder *decoder =
         (raw && pcm) ? new (std::nothrow) micro_mp3::Mp3Decoder() : nullptr;
-    DecodeOutcome outcome = DecodeOutcome::kNeedMore;
     if (!decoder) {
         ESP_LOGE(TAG, "radio buffers or decoder allocation failed");
+        s_want.store(false);
     } else {
-        // 直播流对小时延敏感：播放期间关闭 Wi-Fi modem-sleep（会话期默认 MAX_MODEM
-        // 会让下行数据按 DTIM 突发到达，导致一停一停），退出时恢复原设置。
+        // 服务存续期间持有网络唤醒锁：离开小智页也不断 Wi-Fi（后台广播核心前提）。
+        NetworkAwakeLockGuard network_guard;
+        // 直播流对小时延敏感：播放期关闭 modem-sleep，服务退出时恢复。
         wifi_ps_type_t ps_previous = WIFI_PS_MAX_MODEM;
         const bool ps_saved = esp_wifi_get_ps(&ps_previous) == ESP_OK;
         (void)esp_wifi_set_ps(WIFI_PS_NONE);
-        uint32_t reconnects = 0;
-        while (!s_stop_request.load() && reconnects < kMaxReconnectAttempts) {
-            esp_http_client_config_t http_cfg = {};
-            http_cfg.url = kStationUrl;
-            http_cfg.timeout_ms = kHttpIoTimeoutMs;
-            http_cfg.buffer_size = kHttpSocketBufferBytes;
-            http_cfg.crt_bundle_attach = esp_crt_bundle_attach;
-            const esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
-            if (!client) {
+        uint32_t backoff_ms = kReconnectDelayMs;
+        while (!s_stop_request.load() && s_want.load()) {
+            const bool page_active = xiaozhi_ai_page_active();
+            const bool low_battery =
+                battery_runtime_status_load().low_battery_mode;
+            if (low_battery) {
+                s_want.store(false);
+                ESP_LOGW(TAG, "radio stopped: low battery");
                 break;
             }
-            bool got_data = false;
-            outcome = DecodeOutcome::kNeedMore;
-            if (open_radio_stream(client)) {
-                decoder->reset();
-                size_t raw_len = 0;
-                s_playing.store(true);
-                // 预灌：先攒约 1 秒压缩数据（最多等 1.5s）再开播。
-                const int64_t prefill_deadline_us =
-                    esp_timer_get_time() + static_cast<int64_t>(kPrefillWaitMs) * 1000;
-                while (!s_stop_request.load() && raw_len < kPrefillBytes &&
-                       esp_timer_get_time() < prefill_deadline_us) {
-                    const int got = esp_http_client_read(
-                        client, reinterpret_cast<char *>(raw) + raw_len,
-                        static_cast<int>(kRawBufferBytes - raw_len));
-                    if (got <= 0) {
-                        break;
-                    }
-                    got_data = true;
-                    raw_len += static_cast<size_t>(got);
+            if (page_active) {
+                // 小智页在场：让出独立会话，改用其会话借道播放（对话回合由
+                // tts_playback 闸门自动暂停广播）。paused 只为我们持有独立会话
+                // 需要交还的瞬时状态。
+                if (radio_audio_session_active()) {
+                    stop_radio_audio_session();
                 }
-                while (!s_stop_request.load()) {
-                    raw_len = decode_buffer(*decoder, raw, raw_len, pcm, &outcome);
-                    if (outcome != DecodeOutcome::kNeedMore) {
-                        break;
-                    }
-                    if (raw_len >= kRawBufferBytes) {
-                        // 解码无法消费（异常流），断开重连。
-                        outcome = DecodeOutcome::kFatal;
-                        break;
-                    }
-                    const int got = esp_http_client_read(
-                        client, reinterpret_cast<char *>(raw) + raw_len,
-                        static_cast<int>(kRawBufferBytes - raw_len));
-                    if (got <= 0) {
-                        // 负值为错误，0 视为直播连接结束，均触发重连。
-                        break;
-                    }
-                    got_data = true;
-                    raw_len += static_cast<size_t>(got);
+                s_paused_for_xiaozhi.store(false);
+                if (!audio_codec_active()) {
+                    // 小智会话尚未建立（刚进页/重试窗口），稍候再借。
+                    vTaskDelay(pdMS_TO_TICKS(kSessionWaitDelayMs));
+                    continue;
                 }
-                s_playing.store(false);
+            } else {
+                // 页面已退出：让位目的已达成，清掉瞬时暂停，允许拿独立会话。
+                s_paused_for_xiaozhi.store(false);
+                if (!start_radio_audio_session()) {
+                    vTaskDelay(pdMS_TO_TICKS(kSessionWaitDelayMs));
+                    continue;
+                }
             }
-            esp_http_client_close(client);
-            esp_http_client_cleanup(client);
-            if (s_stop_request.load() || outcome == DecodeOutcome::kStreamEnded) {
+            const bool streamed = stream_segment(*decoder, raw, pcm);
+            if (!xiaozhi_ai_page_active()) {
+                stop_radio_audio_session();
+            }
+            s_playing.store(false);
+            s_segment_stop.store(false);
+            if (s_stop_request.load() || !s_want.load()) {
                 break;
             }
-            reconnects = got_data ? 1 : reconnects + 1;
-            ESP_LOGW(TAG, "radio stream ended (outcome=%d), reconnect attempt %u",
-                     static_cast<int>(outcome), static_cast<unsigned>(reconnects));
-            vTaskDelay(pdMS_TO_TICKS(kReconnectDelayMs));
+            if (streamed) {
+                backoff_ms = kReconnectDelayMs;
+            } else {
+                backoff_ms = backoff_ms * 2 > kReconnectBackoffMaxMs
+                                 ? kReconnectBackoffMaxMs
+                                 : backoff_ms * 2;
+            }
+            ESP_LOGW(TAG, "radio segment ended, retry in %u ms",
+                     static_cast<unsigned>(backoff_ms));
+            for (uint32_t waited = 0; waited < backoff_ms &&
+                                     !s_stop_request.load() && s_want.load();
+                 waited += 100) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
         }
         if (ps_saved) {
             (void)esp_wifi_set_ps(ps_previous);
@@ -321,12 +387,14 @@ bool mcp_control_radio(const XiaozhiMcpRadioRequest &request,
             return true;
         }
         if (!radio_player_start()) {
-            snprintf(result, result_len,
-                     "radio rejected: must be on Xiaozhi AI page or stream busy");
+            snprintf(result, result_len, "radio rejected: service start failed");
             return false;
         }
         snprintf(result, result_len,
-                 "{\"status\":\"started\",\"station\":\"%s\"}", kStationName);
+                 "{\"status\":\"started\",\"station\":\"%s\","
+                 "\"note\":\"background playback enabled; audio pauses while "
+                 "the Xiaozhi AI page is open and resumes after you leave\"}",
+                 kStationName);
         return true;
     }
     case kXiaozhiMcpRadioStop: {
@@ -362,17 +430,12 @@ bool radio_player_init()
 
 bool radio_player_start()
 {
-    if (s_playing.load()) {
+    if (s_task != nullptr && !s_task_exited.load()) {
+        // 服务已在运行（或正在退场），只刷新意图。
+        s_want.store(true);
         return true;
     }
-    if (s_task != nullptr) {
-        // 上一段仍在退出中。
-        return false;
-    }
-    if (!audio_codec_active()) {
-        ESP_LOGW(TAG, "radio start refused: codec session inactive");
-        return false;
-    }
+    s_want.store(true);
     s_stop_request.store(false);
     s_task_exited.store(false);
     if (!s_task_stack) {
@@ -390,18 +453,21 @@ bool radio_player_start()
                                                kTaskCore);
     }
     if (!s_task) {
+        s_want.store(false);
         s_stop_request.store(true);
         s_task_exited.store(true);
         ESP_LOGW(TAG, "radio task creation failed");
         return false;
     }
-    ESP_LOGI(TAG, "radio playback started: %s", kStationName);
+    ESP_LOGI(TAG, "radio service started: %s", kStationName);
     return true;
 }
 
 void radio_player_stop()
 {
-    if (s_task == nullptr && !s_playing.load()) {
+    const bool had_service = s_want.exchange(false) || s_task != nullptr;
+    if (!had_service) {
+        s_stop_request.store(true);
         return;
     }
     s_stop_request.store(true);
@@ -412,10 +478,21 @@ void radio_player_stop()
         heap_caps_free(s_task_stack);
         s_task_stack = nullptr;
         s_task = nullptr;
-        ESP_LOGI(TAG, "radio playback stopped");
+        ESP_LOGI(TAG, "radio service stopped");
     } else {
         ESP_LOGW(TAG, "radio task stop timed out; retry stop to reclaim");
     }
+}
+
+void radio_player_pause_for_xiaozhi()
+{
+    s_paused_for_xiaozhi.store(true);
+    s_segment_stop.store(true);
+}
+
+void radio_player_resume_after_xiaozhi()
+{
+    s_paused_for_xiaozhi.store(false);
 }
 
 bool radio_player_is_playing()

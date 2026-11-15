@@ -50,8 +50,8 @@ constexpr const char *kRadioControlDescription =
     "Control the live internet radio broadcast player on this device. The only supported station is Beijing News Radio (北京新闻广播). "
     "You MUST call this tool for every request about listening to 广播, 电台, 收音机, 北京新闻广播, news radio or live radio broadcast. "
     "Use action=start to begin playing the live broadcast, action=stop to stop it, and action=status to query playback state. "
-    "Radio plays only while the Xiaozhi AI page session is active and automatically pauses while you are speaking. "
-    "Never claim the radio started or stopped unless this tool returned success.";
+    "Radio keeps playing in the background after the user leaves the Xiaozhi AI page; it automatically pauses while you are speaking and resumes afterwards. "
+    "Only action=stop ends background playback. Never claim the radio started or stopped unless this tool returned success.";
 constexpr int kHoursPerDay = 24;
 constexpr int kMinutesPerHour = 60;
 constexpr uint32_t kMaxCountdownSeconds = 7U * 24U * 60U * 60U;

@@ -150,8 +150,8 @@ void ui_runtime_update_xiaozhi_auto_return(int active_page,
         !surfaces.auxiliary_page_requested()) {
         const XiaozhiActivitySnapshot snapshot =
             xiaozhi_ai_activity_snapshot_load();
-        bool conversation_active = snapshot.state == kXiaozhiAiListening ||
-                                   snapshot.state == kXiaozhiAiSpeaking;
+        // Listening 是布防等待态，不再顶住自动退出；仅真实出声(Speaking)视为对话进行中。
+        bool conversation_active = snapshot.state == kXiaozhiAiSpeaking;
         XiaozhiAutoReturnDecision auto_return = xiaozhi_auto_return_decision(
             tick_now,
             last_activity_tick,

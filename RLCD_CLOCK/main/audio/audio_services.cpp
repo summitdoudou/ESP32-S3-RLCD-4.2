@@ -79,6 +79,7 @@ static int16_t s_xiaozhi_last_speaker_sample = 0;
 static int s_xiaozhi_applied_volume = -1;
 static AudioPowerLockOwnership s_audio_power_lock;
 static bool s_xiaozhi_audio_session_owned = false;
+static bool s_radio_audio_session_owned = false;
 static void finish_xiaozhi_speaker_stream();
 
 static void reset_xiaozhi_speaker_stream_state()
@@ -317,6 +318,44 @@ bool set_xiaozhi_audio_high_performance(bool enabled)
         return set_audio_performance_mode(enabled);
     }
     return true;
+}
+
+bool start_radio_audio_session()
+{
+    if (s_radio_audio_session_owned) {
+        return true;
+    }
+    if (!audio_try_mark_playing()) {
+        return false;
+    }
+    s_radio_audio_session_owned = true;
+    CodecPort *codec = prepare_audio_codec(false);
+    if (!codec) {
+        s_radio_audio_session_owned = false;
+        audio_finish_playback();
+        return false;
+    }
+    reset_xiaozhi_speaker_state();
+    return true;
+}
+
+void stop_radio_audio_session()
+{
+    if (!s_radio_audio_session_owned) {
+        return;
+    }
+    if (s_audio_codec) {
+        finish_xiaozhi_speaker_stream();
+        (void)close_xiaozhi_speaker_with_retry();
+    }
+    reset_xiaozhi_speaker_state();
+    audio_finish_playback();
+    s_radio_audio_session_owned = false;
+}
+
+bool radio_audio_session_active()
+{
+    return s_radio_audio_session_owned;
 }
 
 int read_xiaozhi_microphone(void *buffer, size_t bytes)
