@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.20",
+  "latest": "v1.6.21",
   "items": [
+    {
+      "version": "v1.6.21",
+      "notes": "v1.6.21：共 1 项更新。\n1. 新增网络广播功能：小智 AI 页说\"播放北京新闻广播\"即可收听直播，\"关闭广播\"停止；对话期间自动暂停、说完续播，离开页面自动停止，播放期间关闭 Wi-Fi 省电以保流畅。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.21/weather_clock_v1.6.21.bin",
+        "sha256": "4dacafae9aaa08c1bd82d176a1e122b1edea0e6d55b9d2ab46709a7794ec4b2c",
+        "size": 6357264
+      },
+      "merged": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.21/weather_clock_v1.6.21_merged.bin",
+        "sha256": "1d949c3c1dec8ef30ea8f5ba2f9dbbbbfbff49df307d77aaef5079670a4ba0fd",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.20",
       "notes": "v1.6.20：共 1 项更新。\n1. 天气看板底部信息行重新排布：风力与\"距日落\"首字起笔对齐，湿度与\"日落\"两列整体右移，…\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.12/weather_clock_v1.6.12_merged.bin",
         "sha256": "b4bec35e7218e512788f0e418dc6ae82a5b133d319bddd6b994d8a6896b27ad3",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.11",
-      "notes": "v1.6.11：共 3 项更新。\n1. 修复和风天气单次更新的首个 API 请求遇到瞬时 TLS 建连超时或等待响应超时后只能…\n2. 优化和风天气单次更新的 HTTPS 连接复用，减少重复 TLS 建连与联网时间，同时保…\n3. 优化 OTA 启动确认：核心服务就绪后才确认新固件有效，启动异常时保留回滚资格。\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.11/weather_clock_v1.6.11.bin",
-        "sha256": "de28a3f41883570c7d44135806dfce3a2c948fd40aa91391e4ebf76f64a2ec80",
-        "size": 6309392
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.11/weather_clock_v1.6.11_merged.bin",
-        "sha256": "c39254004cf19bdd351eb35496ff714c18970f4b5adee137c898fd40299c41fa",
         "size": 16509951
       }
     }
