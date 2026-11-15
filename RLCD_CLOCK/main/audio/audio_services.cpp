@@ -358,6 +358,11 @@ bool radio_audio_session_active()
     return s_radio_audio_session_owned;
 }
 
+bool xiaozhi_audio_session_active()
+{
+    return s_xiaozhi_audio_session_owned;
+}
+
 int read_xiaozhi_microphone(void *buffer, size_t bytes)
 {
     if (!s_audio_codec || !buffer || bytes == 0) {

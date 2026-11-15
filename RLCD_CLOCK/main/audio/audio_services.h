@@ -34,6 +34,9 @@ void stop_xiaozhi_audio_session();
 bool start_radio_audio_session();
 void stop_radio_audio_session();
 bool radio_audio_session_active();
+// 小智页音频会话是否真正建立（含麦克风就绪）。广播借道播放只允许在此为真时进行，
+// 不能用 audio_codec_active()——广播自己的独立会话也会让它为真（11/15 卡启动事故）。
+bool xiaozhi_audio_session_active();
 bool set_xiaozhi_audio_high_performance(bool enabled);
 int read_xiaozhi_microphone(void *buffer, size_t bytes);
 int write_xiaozhi_speaker(const int16_t *mono_samples, size_t sample_count, int sample_rate);

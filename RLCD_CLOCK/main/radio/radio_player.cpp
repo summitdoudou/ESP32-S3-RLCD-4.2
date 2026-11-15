@@ -38,15 +38,15 @@ constexpr const char kStationUrl[] =
     "//lhttp.qtfm"
     ".cn/live/339/64k.mp3";
 
-constexpr size_t kRawBufferBytes = 16 * 1024;
+constexpr size_t kRawBufferBytes = 32 * 1024;
 // xiaozhi 扬声器整条链（AEC 参考/淡入淡出/共享 I2S 时钟）锁定 16k，广播流须重采样到此率。
 constexpr uint32_t kRadioTargetSampleRate = 16000;
 constexpr size_t kPcmBufferBytes = micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES * 2;
 constexpr int kHttpIoTimeoutMs = 4000;
 constexpr int kHttpSocketBufferBytes = 8192;
-// 起播预灌：先把压缩缓冲喂到 ~1 秒（79kbps≈10KB）再开播，抗网络突发。
-constexpr size_t kPrefillBytes = 10 * 1024;
-constexpr uint32_t kPrefillWaitMs = 1500;
+// 起播预灌：先把压缩缓冲喂到 ~2 秒（79kbps≈20KB）再开播，抗网络突发。
+constexpr size_t kPrefillBytes = 20 * 1024;
+constexpr uint32_t kPrefillWaitMs = 2200;
 constexpr uint32_t kReconnectDelayMs = 1000;
 constexpr uint32_t kReconnectBackoffMaxMs = 15000;
 constexpr uint32_t kSessionWaitDelayMs = 500;
@@ -145,7 +145,9 @@ bool emit_pcm(int16_t *pcm, size_t samples_per_channel, uint32_t rate,
     if (channels >= 2) {
         mono_samples = downmix_to_mono_inplace(pcm, samples_per_channel);
     }
-    if (tts_playback_busy()) {
+    // TTS 占用闸门只在小智页借道模式生效：独立会话模式下小智必然没有会话，
+    // 陈旧 drained 状态会误丢帧导致后台播放一顿一顿（v1.6.24 真机反馈）。
+    if (xiaozhi_ai_page_active() && tts_playback_busy()) {
         return true;
     }
     mono_samples = resample_to_16k_inplace(pcm, mono_samples, rate);
@@ -321,8 +323,9 @@ void radio_task(void *)
                     stop_radio_audio_session();
                 }
                 s_paused_for_xiaozhi.store(false);
-                if (!audio_codec_active()) {
-                    // 小智会话尚未建立（刚进页/重试窗口），稍候再借。
+                if (!xiaozhi_audio_session_active()) {
+                    // 小智音频会话尚未建立：安静等待，绝不抢先占用 codec/播放门，
+                    // 否则小智 start_xiaozhi_audio_session 永远撞门（v1.6.24 卡启动根因）。
                     vTaskDelay(pdMS_TO_TICKS(kSessionWaitDelayMs));
                     continue;
                 }
