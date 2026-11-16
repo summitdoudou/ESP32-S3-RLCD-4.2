@@ -1,7 +1,7 @@
 {
-  "version": "v1.6.26",
-  "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.26/weather_clock_v1.6.26.bin",
-  "sha256": "7e26f3b13446dbd74bc0a6d8e6fc90faf28f54e88080a3a606ff16edd2f6cc94",
-  "size": 6358528,
-  "notes": "v1.6.26：共 2 项修复（真机反馈）。\n1. 修复广播播放中切回小智页一直\"小智准备中\"：小智启动前确定性等待广播交还音频会话（上限3秒），并把广播收段最长时延从4秒压到1.5秒，不再撞进启动重试窗口。\n2. 语音\"关闭广播\"随小智恢复可用。\n完整说明见源码仓库同版本 Release。"
+  "version": "v1.6.27",
+  "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.27/weather_clock_v1.6.27.bin",
+  "sha256": "9ae92bbdd9bf5485d2f1ff083efbdb5cf0e0e1a21b1d9d5e47b582b7c70993a1",
+  "size": 6358864,
+  "notes": "v1.6.27：共 2 项修复（真机反馈）。\n1. 新增物理出口：长按 BOOT 键(≥1.2秒)强制终止广播服务——任何页面、任何卡死状态下都能停广播，不再依赖语音\"关闭广播\"。\n2. 广播中切回小智卡\"启动中\"收口：等待广播让位超时(3秒)后不再静默重试，改为硬停广播后再启动小智，弱网重连退避场景下也能确定性恢复。\n完整说明见源码仓库同版本 Release。"
 }
