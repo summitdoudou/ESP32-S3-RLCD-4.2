@@ -433,7 +433,13 @@ void ensure_wake_word_listening()
     // 确定性让位：等后台广播交还独立音频会话/播放门再启动，避免在其收段窗口内
     // 启动失败、有界重试耗尽后永远卡在"启动中"（v1.6.24/25 真机问题）。
     // 广播借道模式（小智会话在场）不持独立会话，本等待立即返回，不影响唤醒重布防。
-    (void)radio_player_wait_quiet(3000);
+    if (!radio_player_wait_quiet(3000)) {
+        // v1.6.27：等待超时不再"照样启动"——弱网重连退避(≤15s)下广播可能远超 3 秒
+        // 不让位，静默启动失败即永久转圈。硬停服务收口，再给 2 秒确认安静。
+        ESP_LOGW(TAG, "Radio session still active after 3s; hard-stopping for deterministic Xiaozhi start");
+        radio_player_stop();
+        (void)radio_player_wait_quiet(2000);
+    }
     if (!xiaozhi_voice_start()) {
         xiaozhi_snapshot_set(kXiaozhiAiError, kErrorStatus, kWakeWordFailureDetail);
         // The listener owns no audio resources after a failed start. Drop the

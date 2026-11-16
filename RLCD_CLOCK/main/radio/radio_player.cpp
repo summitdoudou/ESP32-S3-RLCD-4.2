@@ -506,6 +506,11 @@ bool radio_player_is_playing()
     return s_playing.load();
 }
 
+bool radio_player_service_active()
+{
+    return s_want.load();
+}
+
 // 有界等待广播交还独立音频会话（进小智页启动链路专用）。返回 true=已安静。
 bool radio_player_wait_quiet(uint32_t timeout_ms)
 {

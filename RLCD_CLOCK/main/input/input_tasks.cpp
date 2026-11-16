@@ -21,6 +21,7 @@
 #include "ui_runtime_schedule.h"
 #include "ui_task_notify.h"
 #include "ui_work_page_catalog.h"
+#include "radio_player.h"
 #include "wifi_portal_state.h"
 
 #include "esp_sleep.h"
@@ -245,6 +246,13 @@ void button_task(void *)
         } else {
             if (boot_pressed_since != 0 && boot_press_stopped_alert) {
                 // 提醒音播放期间任意按键只负责停止音频，不继续执行原按键动作。
+            } else if (boot_pressed_since != 0 &&
+                       button_press_is_long(now - boot_pressed_since) &&
+                       radio_player_service_active()) {
+                // v1.6.27 物理出口：长按 BOOT(≥1.2s) 强制终止广播服务。
+                // radio_player_stop 清后台意图，不会自动续播；按钮路径幂等可重复按。
+                radio_player_stop();
+                ESP_LOGW(TAG, "BOOT long press: radio service force stopped");
             } else if (boot_pressed_since != 0 && settings_page_requested()) {
                 TickType_t held = now - boot_pressed_since;
                 if (button_press_is_short(held)) {
