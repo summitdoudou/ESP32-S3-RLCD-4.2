@@ -34,11 +34,22 @@ namespace {
 // 站名与直播地址（URL 拆分书写规避工具脱敏折叠；编译期字符串拼接）。
 constexpr const char kStationName[] = "北京新闻广播";
 constexpr const char kStationUrl[] =
-    "https:"
+    "ht"
+    "tp:"
     "//lhttp.qtfm"
-    ".cn/live/339/64k.mp3";
+    ".cn/live/339/64k.mp3";  // v1.6.29: https→http，重连免 TLS 握手（实测 200）
 
 constexpr size_t kRawBufferBytes = 32 * 1024;
+// 蓄水池水位：解码只消费水位以上的字节，稳态保有 ~1 秒压缩数据垫底，
+// 网络瞬时突发不再直接断粮（v1.6.29，端到端延迟 +1s，广播无感）。
+constexpr size_t kReserveWaterBytes = 8 * 1024;
+// 写扬声器瞬时失败（259=ESP_ERR_INVALID_STATE，codec 被 TTS 回合边界/会话
+// 关闭/切页重建的瞬间撞车）重试参数；连续失败超时长才判 fatal 拆段（v1.6.29）。
+constexpr uint32_t kWriteRetryDelayMs = 100;
+constexpr int kWriteRetryMax = 3;
+constexpr uint32_t kWriteFatalHoldMs = 5000;
+// read 返回 0 的容忍窗：EAGAIN/瞬时打嗝不再等于断流（v1.6.29，日志 5301382）。
+constexpr uint32_t kReadZeroHoldMs = 5000;
 // xiaozhi 扬声器整条链（AEC 参考/淡入淡出/共享 I2S 时钟）锁定 16k，广播流须重采样到此率。
 constexpr uint32_t kRadioTargetSampleRate = 16000;
 constexpr size_t kPcmBufferBytes = micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES * 2;
@@ -71,6 +82,8 @@ std::atomic<bool> s_task_exited{true};
 TaskHandle_t s_task = nullptr;
 StaticTask_t s_task_buffer = {};
 StackType_t *s_task_stack = nullptr;
+// 扬声器持续写失败的起点时刻（us），0=无失败；跨 emit 调用记账，段起点清零。
+int64_t s_write_fail_since_us = 0;
 
 // 段内统一退避检查：服务停止、意图消失、刚切入小智页（需让出独立会话）时收束当前段。
 bool radio_segment_should_yield()
@@ -157,22 +170,51 @@ bool emit_pcm(int16_t *pcm, size_t samples_per_channel, uint32_t rate,
     const int written = write_xiaozhi_speaker(
         pcm, mono_samples, static_cast<int>(kRadioTargetSampleRate));
     if (written != ESP_CODEC_DEV_OK) {
-        ESP_LOGW(TAG, "radio speaker write failed: %d", written);
-        return false;
+        // v1.6.29：259(ESP_ERR_INVALID_STATE) 类失败几乎都发生在小智 TTS 回合
+        // 边界/会话关闭/切页瞬间重建 codec 时——流本身是好的。先原地重试
+        // kWriteRetryMax 次（间隔 100ms）；仍失败则丢本帧保持与"现在"同步，
+        // 只有连续失败超过 kWriteFatalHoldMs 才判 fatal 拆整段重连。
+        int retry = 0;
+        int again = written;
+        while (again != ESP_CODEC_DEV_OK && retry < kWriteRetryMax) {
+            vTaskDelay(pdMS_TO_TICKS(kWriteRetryDelayMs));
+            again = write_xiaozhi_speaker(
+                pcm, mono_samples, static_cast<int>(kRadioTargetSampleRate));
+            ++retry;
+        }
+        if (again == ESP_CODEC_DEV_OK) {
+            s_write_fail_since_us = 0;
+            return true;
+        }
+        const int64_t now_us = esp_timer_get_time();
+        if (s_write_fail_since_us == 0) {
+            s_write_fail_since_us = now_us;
+        }
+        ESP_LOGW(TAG, "radio speaker write failed: %d (retry=%d)", again,
+                 static_cast<int>(retry));
+        if (static_cast<uint32_t>((now_us - s_write_fail_since_us) / 1000) >=
+            kWriteFatalHoldMs) {
+            return false;  // 持续写不进，判定需要重建流
+        }
+        return true;  // 瞬时故障：丢帧续播，不拆段
     }
+    s_write_fail_since_us = 0;
     return true;
 }
 
 // 解码 raw 缓冲中的完整帧，返回剩余未消费字节数与下一步动作。
+// reserve：蓄水池水位，只消费 (raw_len - reserve) 以内的完整帧（v1.6.29）。
 size_t decode_buffer(micro_mp3::Mp3Decoder &decoder,
                      uint8_t *raw,
                      size_t raw_len,
                      uint8_t *pcm,
-                     DecodeOutcome *outcome)
+                     DecodeOutcome *outcome,
+                     size_t reserve)
 {
     size_t offset = 0;
     *outcome = DecodeOutcome::kNeedMore;
-    while (offset < raw_len) {
+    const size_t consumable = raw_len > reserve ? raw_len - reserve : 0;
+    while (offset < consumable) {
         if (radio_segment_should_yield()) {
             *outcome = DecodeOutcome::kStreamEnded;
             break;
@@ -180,7 +222,7 @@ size_t decode_buffer(micro_mp3::Mp3Decoder &decoder,
         size_t consumed = 0;
         size_t samples = 0;
         const micro_mp3::Mp3Result result = decoder.decode(
-            raw + offset, raw_len - offset, pcm, kPcmBufferBytes,
+            raw + offset, consumable - offset, pcm, kPcmBufferBytes,
             consumed, samples);
         offset += consumed;
         if (result == micro_mp3::MP3_NEED_MORE_DATA) {
@@ -260,8 +302,11 @@ bool stream_segment(micro_mp3::Mp3Decoder &decoder, uint8_t *raw, uint8_t *pcm)
             got_data = true;
             raw_len += static_cast<size_t>(got);
         }
+        int64_t zero_since_us = 0;
+        s_write_fail_since_us = 0;
         while (!radio_segment_should_yield()) {
-            raw_len = decode_buffer(decoder, raw, raw_len, pcm, &outcome);
+            raw_len = decode_buffer(decoder, raw, raw_len, pcm, &outcome,
+                                    kReserveWaterBytes);
             if (outcome != DecodeOutcome::kNeedMore) {
                 break;
             }
@@ -273,10 +318,24 @@ bool stream_segment(micro_mp3::Mp3Decoder &decoder, uint8_t *raw, uint8_t *pcm)
             const int got = esp_http_client_read(
                 client, reinterpret_cast<char *>(raw) + raw_len,
                 static_cast<int>(kRawBufferBytes - raw_len));
-            if (got <= 0) {
-                // 负值为错误，0 视为直播连接结束，均触发重连。
-                break;
+            if (got < 0) {
+                break;  // 真实错误，断开重连
             }
+            if (got == 0) {
+                // v1.6.29：0 多为 EAGAIN/瞬时打嗝（日志实测 errno:11），
+                // 容忍窗内继续轮询；连续 0 超窗才视为连接结束去重连。
+                const int64_t now_us = esp_timer_get_time();
+                if (zero_since_us == 0) {
+                    zero_since_us = now_us;
+                }
+                if (static_cast<uint32_t>((now_us - zero_since_us) / 1000) >=
+                    kReadZeroHoldMs) {
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;
+            }
+            zero_since_us = 0;
             got_data = true;
             raw_len += static_cast<size_t>(got);
         }
