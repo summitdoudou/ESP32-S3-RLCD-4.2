@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.26",
+  "latest": "v1.6.27",
   "items": [
+    {
+      "version": "v1.6.27",
+      "notes": "v1.6.27：共 2 项修复（真机反馈）。\n1. 新增物理出口：长按 BOOT 键(≥1.2秒)强制终止广播服务——任何页面、任何卡死状态下都能停广播，不再依赖语音\"关闭广播\"。\n2. 广播中切回小智卡\"启动中\"收口：等待广播让位超时(3秒)后不再静默重试，改为硬停广播后再启动小智，弱网重连退避场景下也能确定性恢复。\n完整说明见源码仓库同版本 Release。",
+      "app": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.27/weather_clock_v1.6.27.bin",
+        "sha256": "9ae92bbdd9bf5485d2f1ff083efbdb5cf0e0e1a21b1d9d5e47b582b7c70993a1",
+        "size": 6358864
+      },
+      "merged": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.27/weather_clock_v1.6.27_merged.bin",
+        "sha256": "81d7f25e8a480b78bf95694a7bc23633b195395c7da947fa0c37c7fb829fc54d",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.26",
       "notes": "v1.6.26：共 2 项修复（真机反馈）。\n1. 修复广播播放中切回小智页一直\"小智准备中\"：小智启动前确定性等待广播交还音频会话（上限3秒），并把广播收段最长时延从4秒压到1.5秒，不再撞进启动重试窗口。\n2. 语音\"关闭广播\"随小智恢复可用。\n完整说明见源码仓库同版本 Release。",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.18/weather_clock_v1.6.18_merged.bin",
         "sha256": "a0016cbfb1cfab8b7d0c9b8efd5e1f1d70b05139356be1624a72348926f94556",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.17",
-      "notes": "v1.6.17：共 2 项更新。\n1. 温湿历史曲线连线更加圆滑，保留真实小时采样点、最高/最低值标记和缺测断线，采样与刷新频…\n2. 图片时钟更换七张内置星期图片，分别对应周一至周日；使用阈值141、关闭抖动和反色、8p…\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.17/weather_clock_v1.6.17.bin",
-        "sha256": "39636e7faecf4da977440f2e266365a8b3bf62a5c4b28a3a08bdf7c3010fb9bb",
-        "size": 6317648
-      },
-      "merged": {
-        "url": "https://github.com/wickenzh/ESP32-S3-RLCD-4.2/releases/download/v1.6.17/weather_clock_v1.6.17_merged.bin",
-        "sha256": "be55b91d62bc67ce34ad0d11f0000835e80ec6139cec672aeea163fbbab9e3f7",
         "size": 16509951
       }
     }
