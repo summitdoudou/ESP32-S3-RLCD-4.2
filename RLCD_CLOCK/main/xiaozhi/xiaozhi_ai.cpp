@@ -681,6 +681,24 @@ void xiaozhi_ai_set_page_active(bool active)
         xEventGroupSetBits(s_events, kAiPageActiveBit | kAiWakeBit);
     }
     const TickType_t task_start_now = xTaskGetTickCount();
+    // v1.6.28：被独占网络操作(配网/OTA/天气风暴)拦路≥5秒时，UI 明示等待原因，
+    // 不再对着默认"小智准备中"盲转圈；Keepalive 持锁方（广播）已不再触发此拦截。
+    {
+        const bool gate_blocked =
+            !s_task_handle && xiaozhi_power_session_task_start_blocked();
+        static TickType_t s_gate_blocked_since = 0;
+        if (gate_blocked) {
+            if (s_gate_blocked_since == 0) {
+                s_gate_blocked_since = task_start_now;
+            } else if (task_start_now - s_gate_blocked_since >=
+                       pdMS_TO_TICKS(5000)) {
+                xiaozhi_snapshot_set(kXiaozhiAiInactive, "小智准备中",
+                                     "等待配网/升级完成");
+            }
+        } else {
+            s_gate_blocked_since = 0;
+        }
+    }
     if (s_task_handle ||
         xiaozhi_power_session_task_start_blocked() ||
         !s_task_start_retry.attempt_due(task_start_now,

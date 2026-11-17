@@ -27,5 +27,7 @@ void radio_player_resume_after_xiaozhi();
 bool radio_player_is_playing();
 // 播放服务是否存续（后台意图在位，无论当前是否在出声）。v1.6.27 按键强停用。
 bool radio_player_service_active();
+// 当前是否有广播 PCM 正在推给功放（借道或独立模式均覆盖）。v1.6.28 语音输入隔离用。
+bool radio_player_output_active();
 // 有界等待广播交还独立音频会话；小智启动前调用，返回 true 表示已安静。
 bool radio_player_wait_quiet(uint32_t timeout_ms);

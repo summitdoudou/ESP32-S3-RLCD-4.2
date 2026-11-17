@@ -6,8 +6,10 @@
 
 class NetworkAwakeLockGuard {
 public:
-    NetworkAwakeLockGuard()
-        : active_(acquire_network_awake_lock())
+    explicit NetworkAwakeLockGuard(
+        NetworkAwakeKind kind = NetworkAwakeKind::Exclusive)
+        : kind_(kind),
+          active_(acquire_network_awake_lock(kind))
     {
     }
 
@@ -27,12 +29,13 @@ public:
     void release()
     {
         if (active_) {
-            release_network_awake_lock();
+            release_network_awake_lock(kind_);
             active_ = false;
         }
     }
 
 private:
+    NetworkAwakeKind kind_ = NetworkAwakeKind::Exclusive;
     bool active_ = false;
 };
 

@@ -300,7 +300,8 @@ void radio_task(void *)
         s_want.store(false);
     } else {
         // 服务存续期间持有网络唤醒锁：离开小智页也不断 Wi-Fi（后台广播核心前提）。
-        NetworkAwakeLockGuard network_guard;
+        // v1.6.28：身份=Keepalive（只要求 Wi-Fi 别睡），不再拦小智任务创建（死锁根因）。
+        NetworkAwakeLockGuard network_guard(NetworkAwakeKind::Keepalive);
         // 直播流对小时延敏感：播放期关闭 modem-sleep，服务退出时恢复。
         wifi_ps_type_t ps_previous = WIFI_PS_MAX_MODEM;
         const bool ps_saved = esp_wifi_get_ps(&ps_previous) == ESP_OK;
@@ -509,6 +510,11 @@ bool radio_player_is_playing()
 bool radio_player_service_active()
 {
     return s_want.load();
+}
+
+bool radio_player_output_active()
+{
+    return s_playing.load();
 }
 
 // 有界等待广播交还独立音频会话（进小智页启动链路专用）。返回 true=已安静。

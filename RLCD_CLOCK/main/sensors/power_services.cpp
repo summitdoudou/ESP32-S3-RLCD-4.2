@@ -52,6 +52,8 @@ struct PmLockDescriptor {
 StaticTaskMutex s_pm_lock_mutex;
 bool s_pm_configured = false;
 PmLockRuntime s_network_pm_lock_runtime;
+// v1.6.28：Exclusive 身份计数（同锁保护；读取时与总深度做一致性校验）
+int s_network_exclusive_depth = 0;
 PmLockRuntime s_audio_pm_lock_runtime;
 PmLockRuntime s_audio_wake_pm_lock_runtime;
 PmLockRuntime s_audio_cpu_pm_lock_runtime;
@@ -278,19 +280,35 @@ void init_power_management()
 #endif
 }
 
-bool acquire_network_awake_lock()
+bool acquire_network_awake_lock(NetworkAwakeKind kind)
 {
 #if CONFIG_PM_ENABLE
-    return acquire_pm_lock(kNetworkPmLock);
+    const bool ok = acquire_pm_lock(kNetworkPmLock);
+    if (ok && kind == NetworkAwakeKind::Exclusive) {
+        ScopedSemaphoreLock state_lock(s_pm_lock_mutex.handle(), kPmLockMutexTimeout);
+        if (state_lock) {
+            ++s_network_exclusive_depth;
+        }
+    }
+    return ok;
 #else
+    (void)kind;
     return true;
 #endif
 }
 
-void release_network_awake_lock()
+void release_network_awake_lock(NetworkAwakeKind kind)
 {
 #if CONFIG_PM_ENABLE
+    if (kind == NetworkAwakeKind::Exclusive) {
+        ScopedSemaphoreLock state_lock(s_pm_lock_mutex.handle(), kPmLockMutexTimeout);
+        if (state_lock && s_network_exclusive_depth > 0) {
+            --s_network_exclusive_depth;
+        }
+    }
     release_pm_lock(kNetworkPmLock);
+#else
+    (void)kind;
 #endif
 }
 
@@ -303,6 +321,21 @@ bool network_awake_lock_active()
         return true;
     }
     return s_network_pm_lock_runtime.depth > 0;
+#else
+    return false;
+#endif
+}
+
+bool network_exclusive_lock_active()
+{
+#if CONFIG_PM_ENABLE
+    ScopedSemaphoreLock state_lock(s_pm_lock_mutex.handle(), kPmLockMutexTimeout);
+    if (!state_lock) {
+        log_pm_lock_mutex_failure(kNetworkPmLogName);
+        return true;
+    }
+    // 排他计数不可能超出总深度：底层锁被 reconcile 强制清零时不留陈旧拦路
+    return s_network_exclusive_depth > 0 && s_network_pm_lock_runtime.depth > 0;
 #else
     return false;
 #endif

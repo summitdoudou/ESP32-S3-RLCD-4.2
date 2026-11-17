@@ -20,6 +20,8 @@
 #include <freertos/stream_buffer.h>
 #include <freertos/task.h>
 
+#include "radio_player.h"
+
 namespace {
 constexpr const char *kTag = "XiaozhiVoice";
 constexpr int kMicChannels = 2;
@@ -396,6 +398,23 @@ void feed_task(void *)
             continue;
         }
         consecutive_read_failures = 0;
+        // v1.6.28 语音输入隔离：广播出声期间把麦克风采样置零（参考通道保留），
+        // WakeNet/VAD 听不到广播声——"广播不得被当成用户语音输入"的硬闸门。
+        // 代价：广播播放期间"你好小智"同样不响应，停播约一个 chunk 后自动恢复。
+        {
+            const bool radio_mask = radio_player_output_active();
+            static bool s_radio_mask_prev = false;
+            if (radio_mask != s_radio_mask_prev) {
+                s_radio_mask_prev = radio_mask;
+                ESP_LOGI(kTag, "voice input %s: radio output active",
+                         radio_mask ? "masked" : "resumed");
+            }
+            if (radio_mask) {
+                for (int i = 0; i < chunk_samples; ++i) {
+                    stereo[i * channels] = 0;
+                }
+            }
+        }
         TickType_t now = xTaskGetTickCount();
         if (app_tick_deadline_reached(now, next_level_log)) {
             int peak_mic = 0;

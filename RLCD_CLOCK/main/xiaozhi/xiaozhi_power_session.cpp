@@ -52,7 +52,9 @@ bool xiaozhi_power_session_keepalive_active()
 
 bool xiaozhi_power_session_task_start_blocked()
 {
-    return network_awake_lock_active();
+    // v1.6.28 锁分身份：只等独占性网络操作（配网/OTA/短风暴同步）；
+    // 广播等 Keepalive 持锁方不再拦小智任务创建（死锁修复核心）。
+    return network_exclusive_lock_active();
 }
 
 XiaozhiPowerSessionSnapshot xiaozhi_power_session_snapshot()
@@ -77,7 +79,7 @@ void xiaozhi_power_session_release()
         s_network_keepalive.store(false, std::memory_order_release);
     }
     if (s_network_lock_held) {
-        release_network_awake_lock();
+        release_network_awake_lock(NetworkAwakeKind::Keepalive);
         s_network_lock_held = false;
     }
     // Other weather or diagnostics work may still own the shared network lock.
@@ -104,7 +106,7 @@ bool xiaozhi_power_session_set_idle(bool enabled)
             return false;
         }
         if (s_network_lock_held) {
-            release_network_awake_lock();
+            release_network_awake_lock(NetworkAwakeKind::Keepalive);
             s_network_lock_held = false;
         }
         s_idle_low_power = true;
@@ -113,7 +115,7 @@ bool xiaozhi_power_session_set_idle(bool enabled)
     }
     bool network_lock_acquired = false;
     if (!s_network_lock_held) {
-        if (!acquire_network_awake_lock()) {
+        if (!acquire_network_awake_lock(NetworkAwakeKind::Keepalive)) {
             ESP_LOGW(TAG, "Xiaozhi network PM lock unavailable");
             return false;
         }
@@ -123,7 +125,7 @@ bool xiaozhi_power_session_set_idle(bool enabled)
     if (!set_wifi_power_save_with_retry(WIFI_PS_NONE,
                                         "realtime Wi-Fi power save disable")) {
         if (network_lock_acquired) {
-            release_network_awake_lock();
+            release_network_awake_lock(NetworkAwakeKind::Keepalive);
             s_network_lock_held = false;
         }
         return false;
@@ -132,7 +134,7 @@ bool xiaozhi_power_session_set_idle(bool enabled)
         (void)set_wifi_power_save_with_retry(WIFI_PS_MAX_MODEM,
                                              "realtime rollback Wi-Fi power save");
         if (network_lock_acquired) {
-            release_network_awake_lock();
+            release_network_awake_lock(NetworkAwakeKind::Keepalive);
             s_network_lock_held = false;
         }
         return false;
@@ -153,7 +155,7 @@ bool xiaozhi_power_session_acquire_realtime()
         return false;
     }
     if (!s_network_lock_held) {
-        if (!acquire_network_awake_lock()) {
+        if (!acquire_network_awake_lock(NetworkAwakeKind::Keepalive)) {
             ESP_LOGW(TAG, "Xiaozhi network PM lock unavailable");
             return false;
         }
