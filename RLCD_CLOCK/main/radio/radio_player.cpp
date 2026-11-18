@@ -299,6 +299,34 @@ bool open_radio_stream(esp_http_client_handle_t client)
     return esp_http_client_get_status_code(client) == 200;
 }
 
+// v1.6.32 P1-4：只在真实拉流期间关闭 modem-sleep。
+// 旧实现自任务启动起全程保持 WIFI_PS_NONE，把小智页让位等待、会话等待、
+// 重连退避（最长 15s）这些不拉流的时段也算进了高功耗态；guard 在
+// stream_segment 进入时关省电、退出时恢复原值，暂停/退避期正常省电。
+class RadioStreamPsGuard
+{
+public:
+    RadioStreamPsGuard()
+    {
+        if (esp_wifi_get_ps(&saved_) == ESP_OK) {
+            active_ = true;
+            (void)esp_wifi_set_ps(WIFI_PS_NONE);
+        }
+    }
+    ~RadioStreamPsGuard()
+    {
+        if (active_) {
+            (void)esp_wifi_set_ps(saved_);
+        }
+    }
+    RadioStreamPsGuard(const RadioStreamPsGuard &) = delete;
+    RadioStreamPsGuard &operator=(const RadioStreamPsGuard &) = delete;
+
+private:
+    wifi_ps_type_t saved_ = WIFI_PS_MAX_MODEM;
+    bool active_ = false;
+};
+
 // 播一段流。前提：调用方已持有 radio 音频会话。返回本段是否成功出过数据。
 bool stream_segment(micro_mp3::Mp3Decoder &decoder, uint8_t *raw, uint8_t *pcm)
 {
@@ -389,11 +417,9 @@ void radio_task(void *)
     } else {
         // 服务存续期间持有网络唤醒锁：离开小智页也不断 Wi-Fi（后台广播核心前提）。
         // v1.6.28：身份=Keepalive（只要求 Wi-Fi 别睡），不再拦小智任务创建（死锁根因）。
+        // v1.6.32 P1-4：modem-sleep 关闭动作下沉到 stream_segment 的 RadioStreamPsGuard，
+        // 本任务不再全程持有 WIFI_PS_NONE。
         NetworkAwakeLockGuard network_guard(NetworkAwakeKind::Keepalive);
-        // 直播流对小时延敏感：播放期关闭 modem-sleep，服务退出时恢复。
-        wifi_ps_type_t ps_previous = WIFI_PS_MAX_MODEM;
-        const bool ps_saved = esp_wifi_get_ps(&ps_previous) == ESP_OK;
-        (void)esp_wifi_set_ps(WIFI_PS_NONE);
         uint32_t backoff_ms = kReconnectDelayMs;
         while (!s_stop_request.load() && s_want.load()) {
             const bool page_active = xiaozhi_ai_page_active();
@@ -429,7 +455,11 @@ void radio_task(void *)
                     continue;
                 }
             }
-            const bool streamed = stream_segment(*decoder, raw, pcm);
+            bool streamed = false;
+            {
+                const RadioStreamPsGuard stream_ps_guard;
+                streamed = stream_segment(*decoder, raw, pcm);
+            }
             if (!xiaozhi_ai_page_active()) {
                 stop_radio_audio_session();
             }
@@ -452,10 +482,6 @@ void radio_task(void *)
                  waited += 100) {
                 vTaskDelay(pdMS_TO_TICKS(100));
             }
-        }
-        if (ps_saved) {
-            (void)esp_wifi_set_ps(ps_previous);
-            ESP_LOGI(TAG, "radio restored wifi power save=%d", static_cast<int>(ps_previous));
         }
         delete decoder;
     }

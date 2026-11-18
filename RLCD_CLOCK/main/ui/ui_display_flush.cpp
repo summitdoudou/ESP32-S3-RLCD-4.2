@@ -169,12 +169,25 @@ void flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color
     if (touches_visible_area) {
         int area_width = area->x2 - area->x1 + 1;
         uint16_t *buffer = (uint16_t *)color_map;
-        for (int y = clipped_y1; y <= clipped_y2; ++y) {
-            uint16_t *row = buffer + (y - area->y1) * area_width + (clipped_x1 - area->x1);
-            for (int x = clipped_x1; x <= clipped_x2; ++x) {
-                uint8_t color = (*row < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
-                display.RLCD_SetPixel(x, y, color);
-                ++row;
+        if (display.SupportsPackedFlush()) {
+            // v1.6.32 P1-3：横屏打包路径——按 2列×4行 字节块整写，
+            // 每字节 1 次读改写替代旧 8 次逐像素 LUT 访问。
+            // src 左上必须落在裁剪起点（LVGL 缓冲原点是 area->x1/y1）。
+            uint16_t *packed_src = buffer +
+                (clipped_y1 - area->y1) * area_width +
+                (clipped_x1 - area->x1);
+            display.RLCD_FlushRgb565Packed(packed_src, area_width,
+                                           clipped_x1, clipped_y1,
+                                           clipped_x2, clipped_y2,
+                                           kRlcdBlackThreshold);
+        } else {
+            for (int y = clipped_y1; y <= clipped_y2; ++y) {
+                uint16_t *row = buffer + (y - area->y1) * area_width + (clipped_x1 - area->x1);
+                for (int x = clipped_x1; x <= clipped_x2; ++x) {
+                    uint8_t color = (*row < kRlcdBlackThreshold) ? ColorBlack : ColorWhite;
+                    display.RLCD_SetPixel(x, y, color);
+                    ++row;
+                }
             }
         }
     }

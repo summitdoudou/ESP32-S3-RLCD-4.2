@@ -7,6 +7,7 @@
 #include <esp_heap_caps.h>
 #include "display_bsp.h"
 #include "display_dma_mode_state.h"
+#include "rlcd_pixel_map.h"
 
 #define PIXEL_OUT_OF_BOUNDS_LOG_FORMAT "Beyond the limit : (%d,%d)"
 #define RLCD_TX_FAILED_LOG_FORMAT "RLCD tx failed err=%s len=%d offset=%d dma_free=%u dma_largest=%u"
@@ -258,23 +259,23 @@ spihost_(spihost)
     }
 
 #if (AlgorithmOptimization == 3)
-    PixelIndexLUT = static_cast<uint16_t *>(heap_caps_malloc(
-        static_cast<size_t>(pixel_count) * sizeof(uint16_t), MALLOC_CAP_SPIRAM));
-    PixelBitLUT = static_cast<uint8_t *>(heap_caps_malloc(
-        static_cast<size_t>(pixel_count) * sizeof(uint8_t), MALLOC_CAP_SPIRAM));
-    if (PixelIndexLUT == NULL) {
-        LogDisplayAllocationFailure("RLCD pixel index LUT", pixel_count * sizeof(uint16_t));
-    }
-    if (PixelBitLUT == NULL) {
-        LogDisplayAllocationFailure("RLCD pixel bit LUT", pixel_count * sizeof(uint8_t));
-    }
-    if (!PixelIndexLUT || !PixelBitLUT) {
-        ReleaseResources();
-        return;
-    }
-    if (uses_landscape_lut) {
-        InitLandscapeLUT();
-    } else {
+    // v1.6.32 P1-3：横屏（真机 400×300）改用 rlcd_pixel_map 纯算术映射，
+    // 不再分配两张共 360KB PSRAM 的 LUT；仅竖屏几何（仿真/其它面板）保留查表。
+    if (!uses_landscape_lut) {
+        PixelIndexLUT = static_cast<uint16_t *>(heap_caps_malloc(
+            static_cast<size_t>(pixel_count) * sizeof(uint16_t), MALLOC_CAP_SPIRAM));
+        PixelBitLUT = static_cast<uint8_t *>(heap_caps_malloc(
+            static_cast<size_t>(pixel_count) * sizeof(uint8_t), MALLOC_CAP_SPIRAM));
+        if (PixelIndexLUT == NULL) {
+            LogDisplayAllocationFailure("RLCD pixel index LUT", pixel_count * sizeof(uint16_t));
+        }
+        if (PixelBitLUT == NULL) {
+            LogDisplayAllocationFailure("RLCD pixel bit LUT", pixel_count * sizeof(uint8_t));
+        }
+        if (!PixelIndexLUT || !PixelBitLUT) {
+            ReleaseResources();
+            return;
+        }
         InitPortraitLUT();
     }
 #endif
@@ -690,13 +691,25 @@ void DisplayPort::InitLandscapeLUT() {
 }
 
 void DisplayPort::RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color) {
-    if (!ready_ || !DispBuffer || !PixelIndexLUT || !PixelBitLUT ||
+    if (!ready_ || !DispBuffer ||
         x >= static_cast<uint16_t>(width_) || y >= static_cast<uint16_t>(height_)) {
         return;
     }
-    const size_t lut_offset = PixelLutOffset(x, y);
-    uint32_t idx = PixelIndexLUT[lut_offset];
-    uint8_t  mask = PixelBitLUT[lut_offset];
+    uint32_t idx;
+    uint8_t mask;
+    if (width_ == 400) {
+        // v1.6.32 P1-3：横屏纯算术（黄金图测试保证与遗留 LUT 全等），零 LUT。
+        idx = static_cast<uint32_t>(
+            rlcd_pixel_map::LandscapeByteIndex(x, y, static_cast<uint16_t>(height_)));
+        mask = rlcd_pixel_map::LandscapeBitMask(x, y, static_cast<uint16_t>(height_));
+    } else {
+        if (!PixelIndexLUT || !PixelBitLUT) {
+            return;
+        }
+        const size_t lut_offset = PixelLutOffset(x, y);
+        idx = PixelIndexLUT[lut_offset];
+        mask = PixelBitLUT[lut_offset];
+    }
 
     uint8_t *p = &DispBuffer[idx];
 
@@ -704,6 +717,25 @@ void DisplayPort::RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color) {
         *p |= mask;
     else
         *p &= ~mask;
+}
+
+bool DisplayPort::SupportsPackedFlush() const
+{
+    return ready_ && DispBuffer != NULL && width_ == 400 &&
+           (height_ % 4) == 0;
+}
+
+void DisplayPort::RLCD_FlushRgb565Packed(const uint16_t *src, int src_pitch,
+                                         int x1, int y1, int x2, int y2,
+                                         uint16_t black_threshold)
+{
+    if (!SupportsPackedFlush() || !src) {
+        return;
+    }
+    rlcd_pixel_map::PackRegionLandscape(
+        DispBuffer, static_cast<uint16_t>(width_),
+        static_cast<uint16_t>(height_), src, src_pitch,
+        x1, y1, x2, y2, black_threshold);
 }
 
 #endif

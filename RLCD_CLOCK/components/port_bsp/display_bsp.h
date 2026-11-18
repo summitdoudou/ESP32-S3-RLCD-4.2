@@ -71,4 +71,10 @@ class DisplayPort {
     void RLCD_SetLandscapePixel(uint16_t x, uint16_t y, uint8_t color);     //横屏显示
 	#endif
 	void RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color);
+
+    // v1.6.32 P1-3：横屏专用 RGB565→帧缓冲块打包路径（零 LUT、整字节写）。
+    bool SupportsPackedFlush() const;
+    void RLCD_FlushRgb565Packed(const uint16_t *src, int src_pitch,
+                                int x1, int y1, int x2, int y2,
+                                uint16_t black_threshold);
 };
