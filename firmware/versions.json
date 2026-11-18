@@ -1,6 +1,20 @@
 {
-  "latest": "v1.6.31",
+  "latest": "v1.6.32",
   "items": [
+    {
+      "version": "v1.6.32",
+      "notes": "v1.6.32：共 2 项更新（屏幕刷新提速、后台广播省电）。\n1. 屏幕刷新重写：像素地址改纯算术计算并打包写屏，全屏刷新的内存访问量降约 8 倍，页面切换/图片页/开机动画更流畅；同时回收 360KB 显示缓存内存。新路径与旧路径经逐字节黄金图测试全等验证。\n2. 广播省电收窄：Wi-Fi 高性能态只在真实拉流时开启，暂停、让位小智、弱网重连等待期间恢复正常省电模式，待机与后台广播更省电。\n完整说明见源码仓库同版本 Release。\nv1.6.31：共 3 项更新（下载提速、固件瘦身、发布质量门禁）。\n1. 固件同步（OTA）提速：下载缓冲 4KB→16KB，取消每块固定 25ms 延时，正常网络下整…",
+      "app": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.32/weather_clock_v1.6.32.bin",
+        "sha256": "ff10828bd3a52b3413dd748a92294e5f7b9e636d76dab85446ddd3c6f88edcfb",
+        "size": 6284496
+      },
+      "merged": {
+        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.32/weather_clock_v1.6.32_merged.bin",
+        "sha256": "33eb0bcbd63d8e5cd165cc9914b4c339ff83ad755aa7fa8760b704f109cbbfcd",
+        "size": 16509951
+      }
+    },
     {
       "version": "v1.6.31",
       "notes": "v1.6.31：共 3 项更新（下载提速、固件瘦身、发布质量门禁）。\n1. 固件同步（OTA）提速：下载缓冲 4KB→16KB，取消每块固定 25ms 延时，正常网络下整包升级预计快约 30-40 秒。\n2. 固件瘦身：裁剪 31 个未使用的界面控件库代码，App 体积回收约 76KB，为后续功能腾出空间。\n3. 发布门禁：46 项离线逻辑测试纳入 CI 强制执行，并新增固件体积预算检查，防止后续版本体积失控。\n完整说明见源码仓库同版本 Release。\nv1.6.30：共 2 项更新（广播与语音底层稳定性修复，静态审查 P0 项落地）。\n1. 广播启停并发竞态修复：启动/停止改为持锁握手回收，同时按按键、语音、闹钟快速启停不再…",
@@ -124,20 +138,6 @@
       "merged": {
         "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.23/weather_clock_v1.6.23_merged.bin",
         "sha256": "53ec22cbd6a349b8862f81a3dabdb89dc52e788c396dc1182442e1b0e835a6ae",
-        "size": 16509951
-      }
-    },
-    {
-      "version": "v1.6.22",
-      "notes": "v1.6.22：共 1 项更新。\n1. 修复网络广播播放变慢、声音低沉拉长的问题：北京新闻广播为 48kHz 立体声流，改为重采样到 16kHz 单声道再送扬声器，与小智音频链路时钟对齐。\n完整说明见源码仓库同版本 Release。",
-      "app": {
-        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.22/weather_clock_v1.6.22.bin",
-        "sha256": "5a778df8d4bb426618deec485492480239a02ed5a2d11e7aa3d47436518a1da0",
-        "size": 6357648
-      },
-      "merged": {
-        "url": "https://github.com/summitdoudou/ESP32-S3-RLCD-4.2/releases/download/v1.6.22/weather_clock_v1.6.22_merged.bin",
-        "sha256": "e1cf8f1cba50ebb82342904f3de5195edfe730f74e6341c35ac799a63c01c570",
         "size": 16509951
       }
     }
