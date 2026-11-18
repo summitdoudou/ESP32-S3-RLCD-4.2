@@ -9,8 +9,8 @@ inline constexpr int kOtaNoProgressTimeoutMs = 45 * 1000;
 inline constexpr int kOtaMaxDownloadMs = 10 * 60 * 1000;
 inline constexpr int kOtaStatusMinIntervalMs = 3 * 1000;
 inline constexpr int kOtaAvailableConfirmTimeoutMs = 60 * 1000;
-inline constexpr int kOtaDownloadBufferSize = 4096;
-inline constexpr int kOtaChunkDelayMs = 25;
+inline constexpr int kOtaDownloadBufferSize = 16384;
+inline constexpr int kOtaChunkDelayMs = 1;
 
 enum class OtaInstallAttemptResult {
     kSucceeded,

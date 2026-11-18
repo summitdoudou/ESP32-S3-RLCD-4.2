@@ -18,6 +18,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  host-tests:
+    name: Host 逻辑测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 运行可离线子集
+        shell: bash
+        run: python3 RLCD_CLOCK/tests/run_host_tests.py
+
   build-and-upload:
     name: ESP32-S3 固件
     runs-on: ubuntu-latest
@@ -97,6 +110,21 @@ jobs:
           test -s "weather_clock_${VERSION}.bin"
           test -s "weather_clock_${VERSION}_merged.bin"
           sha256sum "weather_clock_${VERSION}.bin" "weather_clock_${VERSION}_merged.bin"
+
+      - name: 体积门禁
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 RLCD_CLOCK/tests/size_gate.py "weather_clock_${VERSION}.bin" 0x6c0000 93
+          merged_size="$(stat -c%s "weather_clock_${VERSION}_merged.bin")"
+          merged_budget="$((16777216 * 98 / 100))"
+          echo "size-gate: merged=${merged_size}B budget=${merged_budget}B"
+          if [ "${merged_size}" -gt "${merged_budget}" ]; then
+            echo "FAIL: merged 超出 16MiB Flash 的 98% 预算" >&2
+            exit 1
+          fi
 
       - name: 等待同版本 Release
         env:
