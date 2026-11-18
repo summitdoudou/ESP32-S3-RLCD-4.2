@@ -6,6 +6,7 @@
 #include "audio_services.h"
 #include "battery_runtime_state.h"
 #include "network_task_guards.h"
+#include "scoped_semaphore_lock.h"
 #include "xiaozhi_ai.h"
 #include "xiaozhi_mcp.h"
 #include "xiaozhi_tts_playback.h"
@@ -66,6 +67,8 @@ constexpr UBaseType_t kTaskPriority = 5;
 constexpr BaseType_t kTaskCore = 1;
 constexpr uint32_t kStopWaitRoundMs = 20;
 constexpr uint32_t kStopWaitRounds = 250;
+// 生命周期锁等待上限：必须大于 stop 最坏持锁时长(kStopWaitRounds*kStopWaitRoundMs)。
+constexpr uint32_t kLifeLockWaitMs = 6000;
 
 enum class DecodeOutcome : uint8_t {
     kNeedMore,     // 等待更多字节
@@ -82,8 +85,34 @@ std::atomic<bool> s_task_exited{true};
 TaskHandle_t s_task = nullptr;
 StaticTask_t s_task_buffer = {};
 StackType_t *s_task_stack = nullptr;
+// 生命周期状态机（v1.6.30 P0-1）：仅在 s_life_mutex 内迁移。
+// kRetiring = 已请求停止但任务尚未确认退出；此状态禁止复用栈建任务。
+enum class RadioLifeState : uint8_t {
+    kIdle,
+    kRunning,
+    kRetiring,
+};
+RadioLifeState s_life_state = RadioLifeState::kIdle;
+StaticTaskMutex s_life_mutex;
 // 扬声器持续写失败的起点时刻（us），0=无失败；跨 emit 调用记账，段起点清零。
 int64_t s_write_fail_since_us = 0;
+
+// 回收"已确认退出但未删除"的任务与静态栈（调用方必须持有 s_life_mutex）。
+// 返回 true=本轮发生了回收。
+bool radio_reclaim_retired_locked()
+{
+    if (s_task == nullptr || !s_task_exited.load()) {
+        return false;
+    }
+    vTaskDelete(s_task);
+    s_task = nullptr;
+    if (s_task_stack != nullptr) {
+        heap_caps_free(s_task_stack);
+        s_task_stack = nullptr;
+    }
+    s_life_state = RadioLifeState::kIdle;
+    return true;
+}
 
 // 段内统一退避检查：服务停止、意图消失、刚切入小智页（需让出独立会话）时收束当前段。
 bool radio_segment_should_yield()
@@ -434,7 +463,10 @@ void radio_task(void *)
     heap_caps_free(pcm);
     s_playing.store(false);
     s_task_exited.store(true);
-    vTaskDelete(nullptr);
+    // 协作式握手（v1.6.30 P0-1）：自挂起而非自删——栈由持有生命周期锁的
+    // 回收方(v1.6.30 起=start/stop 入口)统一 vTaskDelete 后再释放，
+    // 彻底堵死"栈在任务还在跑时被 free"的 use-after-free 窗口。
+    vTaskSuspend(nullptr);
 }
 
 bool mcp_control_radio(const XiaozhiMcpRadioRequest &request,
@@ -490,14 +522,34 @@ bool mcp_control_radio(const XiaozhiMcpRadioRequest &request,
 
 bool radio_player_init()
 {
+    if (!s_life_mutex.init()) {
+        ESP_LOGE(TAG, "radio lifecycle mutex init failed");
+        return false;
+    }
     xiaozhi_mcp_register_radio_handler(mcp_control_radio);
     return true;
 }
 
 bool radio_player_start()
 {
-    if (s_task != nullptr && !s_task_exited.load()) {
-        // 服务已在运行（或正在退场），只刷新意图。
+    if (!s_life_mutex.handle() && !s_life_mutex.init()) {
+        ESP_LOGE(TAG, "radio lifecycle mutex unavailable");
+        return false;
+    }
+    const ScopedSemaphoreLock guard(s_life_mutex, pdMS_TO_TICKS(kLifeLockWaitMs));
+    if (!guard) {
+        ESP_LOGW(TAG, "radio lifecycle lock timeout; start rejected");
+        return false;
+    }
+    // 若上一次退出的任务尚未回收（超时滞留/自退），先回收再启动。
+    radio_reclaim_retired_locked();
+    if (s_life_state == RadioLifeState::kRetiring) {
+        // 任务正在退场但尚未确认退出：不可复用同一块栈，明确拒绝（防假启动）。
+        ESP_LOGW(TAG, "radio task retiring; start rejected");
+        return false;
+    }
+    if (s_life_state == RadioLifeState::kRunning) {
+        // 服务已在运行，只刷新意图。
         s_want.store(true);
         return true;
     }
@@ -522,28 +574,49 @@ bool radio_player_start()
         s_want.store(false);
         s_stop_request.store(true);
         s_task_exited.store(true);
+        if (s_task_stack) {
+            heap_caps_free(s_task_stack);
+            s_task_stack = nullptr;
+        }
         ESP_LOGW(TAG, "radio task creation failed");
         return false;
     }
+    s_life_state = RadioLifeState::kRunning;
+    ESP_LOGI(TAG, "radio task created");
     ESP_LOGI(TAG, "radio service started: %s", kStationName);
     return true;
 }
 
 void radio_player_stop()
 {
-    const bool had_service = s_want.exchange(false) || s_task != nullptr;
-    if (!had_service) {
-        s_stop_request.store(true);
+    // 意图旗标先行落定（锁被占也能让任务最终退场）；回收只在拿到锁后做。
+    s_want.store(false);
+    s_stop_request.store(true);
+    if (!s_life_mutex.handle() && !s_life_mutex.init()) {
+        ESP_LOGE(TAG, "radio lifecycle mutex unavailable; stop not reclaimed");
         return;
     }
-    s_stop_request.store(true);
+    const ScopedSemaphoreLock guard(s_life_mutex, pdMS_TO_TICKS(kLifeLockWaitMs));
+    if (!guard) {
+        ESP_LOGW(TAG, "radio lifecycle lock timeout; retry stop to reclaim");
+        return;
+    }
+    if (radio_reclaim_retired_locked()) {
+        // 任务此前已确认退出但未回收，本轮回收即完成停止。
+        ESP_LOGI(TAG, "radio service stopped");
+        return;
+    }
+    if (s_life_state != RadioLifeState::kRunning) {
+        // 本就无服务（Idle）或另一调用方正在退场处理（Retiring）。
+        return;
+    }
+    s_life_state = RadioLifeState::kRetiring;
     for (uint32_t i = 0; i < kStopWaitRounds && !s_task_exited.load(); ++i) {
         vTaskDelay(pdMS_TO_TICKS(kStopWaitRoundMs));
     }
-    if (s_task_exited.load()) {
-        heap_caps_free(s_task_stack);
-        s_task_stack = nullptr;
-        s_task = nullptr;
+    // 关键：只有确认任务已自挂起(v1.6.30 起退出路径=vTaskSuspend)才删除并释放栈；
+    // 超时则整体保留现场，由下次 start/stop 的回收步处理，绝不半途 free 活栈。
+    if (radio_reclaim_retired_locked()) {
         ESP_LOGI(TAG, "radio service stopped");
     } else {
         ESP_LOGW(TAG, "radio task stop timed out; retry stop to reclaim");

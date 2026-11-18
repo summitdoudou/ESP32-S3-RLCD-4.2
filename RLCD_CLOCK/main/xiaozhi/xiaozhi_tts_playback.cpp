@@ -4,6 +4,7 @@
 #include "app_metadata.h"
 #include "audio_services.h"
 #include "checked_size.h"
+#include "scoped_semaphore_lock.h"
 
 #include <esp_codec_dev_types.h>
 #include <esp_heap_caps.h>
@@ -48,6 +49,10 @@ StaticStreamBuffer_t s_stream_buffer = {};
 StreamBufferHandle_t s_stream = nullptr;
 StaticSemaphore_t s_wake_signal_storage = {};
 SemaphoreHandle_t s_wake_signal = nullptr;
+// 生命周期互斥（v1.6.30 P1-1）：串行化 start/stop；stop 超时不再强删
+// 仍可能卡在 Codec 写入/临界区的任务，保留现场由下次 start/stop 回收。
+StaticTaskMutex s_life_mutex;
+constexpr uint32_t kLifeLockWaitMs = 4000;  // 大于 stop 最坏持锁时长(200*10ms=2s)
 
 static_assert(kStreamBytes > kPrebufferBytes,
               "TTS stream must exceed its prebuffer threshold");
@@ -86,6 +91,40 @@ void signal_playback_task()
     if (s_wake_signal) {
         (void)xSemaphoreGive(s_wake_signal);
     }
+}
+
+// 生命周期锁懒初始化守卫（与 power_services 既有同款姿势）。
+bool ensure_life_mutex()
+{
+    return s_life_mutex.handle() != nullptr || s_life_mutex.init();
+}
+
+// 停止核心（调用方必须持有 s_life_mutex）。返回 false=任务超时仍未退出：
+// 保留任务与缓冲现场（不强删、不释放——那才是真正的 UAF/资源损坏来源），
+// 由下一次 start/stop 在确认 exited 后回收。
+bool stop_locked()
+{
+    s_running.store(false);
+    signal_playback_task();
+    for (int retry = 0;
+         s_task && !s_exited.load() && retry < kStopRetryCount;
+         ++retry) {
+        vTaskDelay(pdMS_TO_TICKS(kStopRetryDelayMs));
+    }
+    if (s_task && !s_exited.load()) {
+        ESP_LOGW(TAG,
+                 XIAOZHI_TTS_TASK_STOP_TIMEOUT_FORMAT,
+                 kStopRetryCount,
+                 static_cast<unsigned>(kStopRetryDelayMs));
+        return false;
+    }
+    if (s_task) {
+        vTaskDelete(s_task);  // 任务已自行 vTaskSuspend，删除安全
+        s_task = nullptr;
+    }
+    s_busy.store(false);
+    release_storage();
+    return true;
 }
 
 void playback_task(void *)
@@ -148,26 +187,19 @@ void playback_task(void *)
 
 void xiaozhi_tts_playback_stop()
 {
+    // 旗标先行落定：即使拿不到锁，任务也会自行走向退出（循环判 s_running）。
     s_running.store(false);
     signal_playback_task();
-    for (int retry = 0;
-         s_task && !s_exited.load() && retry < kStopRetryCount;
-         ++retry) {
-        vTaskDelay(pdMS_TO_TICKS(kStopRetryDelayMs));
+    if (!ensure_life_mutex()) {
+        ESP_LOGE(TAG, "xiaozhi TTS lifecycle mutex unavailable; stop not reclaimed");
+        return;
     }
-    if (s_task && !s_exited.load()) {
-        ESP_LOGW(TAG,
-                 XIAOZHI_TTS_TASK_STOP_TIMEOUT_FORMAT,
-                 kStopRetryCount,
-                 static_cast<unsigned>(kStopRetryDelayMs));
+    const ScopedSemaphoreLock guard(s_life_mutex, pdMS_TO_TICKS(kLifeLockWaitMs));
+    if (!guard) {
+        ESP_LOGW(TAG, "xiaozhi TTS lifecycle lock timeout; retry stop to reclaim");
+        return;
     }
-    if (s_task) {
-        vTaskDelete(s_task);
-        s_task = nullptr;
-    }
-    s_exited.store(true);
-    s_busy.store(false);
-    release_storage();
+    (void)stop_locked();
 }
 
 bool xiaozhi_tts_playback_start()
@@ -175,7 +207,24 @@ bool xiaozhi_tts_playback_start()
     if (s_running.load() && s_task) {
         return true;
     }
-    xiaozhi_tts_playback_stop();
+    if (!ensure_life_mutex()) {
+        ESP_LOGE(TAG, "xiaozhi TTS lifecycle mutex unavailable");
+        return false;
+    }
+    const ScopedSemaphoreLock guard(s_life_mutex, pdMS_TO_TICKS(kLifeLockWaitMs));
+    if (!guard) {
+        ESP_LOGW(TAG, "xiaozhi TTS lifecycle lock timeout; start rejected");
+        return false;
+    }
+    if (s_running.load() && s_task) {
+        // 拿锁后复查：并发 start 的另一路已完成建任务。
+        return true;
+    }
+    if (!stop_locked()) {
+        // 滞留任务仍未退出：不可复用缓冲/TCB，明确拒绝（调用方已有失败分支）。
+        ESP_LOGW(TAG, "xiaozhi TTS task retiring; start rejected");
+        return false;
+    }
     if (!prepare_wake_signal()) {
         return false;
     }
